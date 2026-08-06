@@ -8,6 +8,8 @@ def test_settings_use_safe_defaults() -> None:
 
     assert settings.dry_run is True
     assert settings.timezone == "America/Detroit"
+    assert settings.alert_window_start_hour == 7
+    assert settings.alert_window_end_hour == 22
     assert settings.log_level == "INFO"
 
 
@@ -16,6 +18,8 @@ def test_settings_read_environment_values() -> None:
         {
             "DRY_RUN": "false",
             "APP_TIMEZONE": "UTC",
+            "ALERT_WINDOW_START_HOUR": "8",
+            "ALERT_WINDOW_END_HOUR": "21",
             "LOG_LEVEL": "debug",
             "TELEGRAM_BOT_TOKEN": "test-token",
             "TELEGRAM_CHAT_ID": "12345",
@@ -24,6 +28,8 @@ def test_settings_read_environment_values() -> None:
 
     assert settings.dry_run is False
     assert settings.timezone == "UTC"
+    assert settings.alert_window_start_hour == 8
+    assert settings.alert_window_end_hour == 21
     assert settings.log_level == "DEBUG"
     assert settings.telegram_bot_token == "test-token"
     assert settings.telegram_chat_id == "12345"
@@ -32,6 +38,28 @@ def test_settings_read_environment_values() -> None:
 def test_settings_reject_invalid_boolean_values() -> None:
     with pytest.raises(ValueError, match="DRY_RUN"):
         Settings.from_environment({"DRY_RUN": "sometimes"})
+
+
+@pytest.mark.parametrize("timezone", ["Not/A_Timezone", ""])
+def test_settings_reject_invalid_timezones(timezone: str) -> None:
+    with pytest.raises(ValueError, match="APP_TIMEZONE"):
+        Settings.from_environment({"APP_TIMEZONE": timezone})
+
+
+@pytest.mark.parametrize(
+    ("environment", "variable"),
+    [
+        ({"ALERT_WINDOW_START_HOUR": "morning"}, "ALERT_WINDOW_START_HOUR"),
+        ({"ALERT_WINDOW_END_HOUR": "24"}, "ALERT_WINDOW_END_HOUR"),
+        (
+            {"ALERT_WINDOW_START_HOUR": "22", "ALERT_WINDOW_END_HOUR": "7"},
+            "ALERT_WINDOW_START_HOUR",
+        ),
+    ],
+)
+def test_settings_reject_invalid_alert_windows(environment: dict[str, str], variable: str) -> None:
+    with pytest.raises(ValueError, match=variable):
+        Settings.from_environment(environment)
 
 
 def test_loader_uses_environment_values_over_dotenv(tmp_path, monkeypatch) -> None:

@@ -9,6 +9,7 @@ from typing import Sequence
 
 from forex_alert_bot.config import load_settings
 from forex_alert_bot.logging import configure_logging
+from forex_alert_bot.scheduler import create_scheduler
 from forex_alert_bot.telegram import TelegramNotifierError, send_telegram_test_message
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Send one test message to the configured Telegram chat.",
     )
+    parser.add_argument(
+        "--schedule",
+        action="store_true",
+        help="Start the recurring signal-check scheduler.",
+    )
     arguments = parser.parse_args(argv)
 
     settings = load_settings()
@@ -41,6 +47,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             logger.error("Telegram test failed: %s", error)
             return 1
         logger.info("Telegram test message sent.")
+        return 0
+
+    if arguments.schedule:
+        scheduler = create_scheduler(settings)
+        logger.info("Starting signal-check scheduler.")
+        scheduler.start()
         return 0
 
     if settings.dry_run:

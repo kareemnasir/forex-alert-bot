@@ -55,6 +55,18 @@ python -m forex_alert_bot --dry-run
 
 The scaffold logs that dry-run mode is active and does not perform any signal checks or send alerts.
 
+## Scheduled runs
+
+Start the recurring signal-check service with:
+
+```bash
+python -m forex_alert_bot --schedule
+```
+
+It runs at :00 and :30 during the configured local alert window (7:00 AM through
+10:00 PM in `America/Detroit` by default). Set `DRY_RUN=true` to log each scheduled
+run without making a real alert or network send.
+
 ## Telegram test
 
 Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env` (or as explicit environment

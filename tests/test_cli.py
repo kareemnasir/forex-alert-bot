@@ -59,3 +59,47 @@ def test_telegram_test_command_sends_one_message(monkeypatch) -> None:
 
     assert cli.main(["--telegram-test"]) == 0
     assert sent_settings == [settings]
+
+
+def test_schedule_command_starts_scheduler_without_blocking(monkeypatch) -> None:
+    from forex_alert_bot import cli
+
+    settings = Settings()
+    created_with: list[Settings] = []
+    started: list[bool] = []
+
+    class SchedulerStub:
+        def start(self) -> None:
+            started.append(True)
+
+    def create_scheduler_stub(value: Settings) -> SchedulerStub:
+        created_with.append(value)
+        return SchedulerStub()
+
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(cli, "create_scheduler", create_scheduler_stub)
+
+    assert cli.main(["--schedule"]) == 0
+    assert created_with == [settings]
+    assert started == [True]
+
+
+def test_schedule_dry_run_forwards_dry_run_settings_to_scheduler(monkeypatch) -> None:
+    from forex_alert_bot import cli
+
+    settings = Settings(dry_run=False)
+    created_with: list[Settings] = []
+
+    class SchedulerStub:
+        def start(self) -> None:
+            pass
+
+    def create_scheduler_stub(value: Settings) -> SchedulerStub:
+        created_with.append(value)
+        return SchedulerStub()
+
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(cli, "create_scheduler", create_scheduler_stub)
+
+    assert cli.main(["--schedule", "--dry-run"]) == 0
+    assert created_with == [Settings(dry_run=True)]
