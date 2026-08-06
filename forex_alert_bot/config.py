@@ -23,6 +23,8 @@ class Settings:
     dry_run: bool = DEFAULT_DRY_RUN
     timezone: str = DEFAULT_TIMEZONE
     log_level: str = DEFAULT_LOG_LEVEL
+    telegram_bot_token: str | None = None
+    telegram_chat_id: str | None = None
 
     @classmethod
     def from_environment(cls, environment: Mapping[str, str]) -> Settings:
@@ -31,6 +33,8 @@ class Settings:
             dry_run=_parse_boolean(environment.get("DRY_RUN", str(DEFAULT_DRY_RUN))),
             timezone=environment.get("APP_TIMEZONE", DEFAULT_TIMEZONE),
             log_level=environment.get("LOG_LEVEL", DEFAULT_LOG_LEVEL).upper(),
+            telegram_bot_token=environment.get("TELEGRAM_BOT_TOKEN"),
+            telegram_chat_id=environment.get("TELEGRAM_CHAT_ID"),
         )
 
 

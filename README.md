@@ -55,6 +55,18 @@ python -m forex_alert_bot --dry-run
 
 The scaffold logs that dry-run mode is active and does not perform any signal checks or send alerts.
 
+## Telegram test
+
+Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env` (or as explicit environment
+variables), then send exactly one test message:
+
+```bash
+python -m forex_alert_bot --telegram-test
+```
+
+The command reports missing credentials and Telegram API failures clearly, and it does not
+run any signal checks or place trades.
+
 ## Checks
 
 ```bash
