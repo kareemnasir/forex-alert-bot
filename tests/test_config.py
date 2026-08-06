@@ -40,6 +40,12 @@ def test_settings_reject_invalid_boolean_values() -> None:
         Settings.from_environment({"DRY_RUN": "sometimes"})
 
 
+@pytest.mark.parametrize("timezone", ["Not/A_Timezone", ""])
+def test_settings_reject_invalid_timezones(timezone: str) -> None:
+    with pytest.raises(ValueError, match="APP_TIMEZONE"):
+        Settings.from_environment({"APP_TIMEZONE": timezone})
+
+
 @pytest.mark.parametrize(
     ("environment", "variable"),
     [

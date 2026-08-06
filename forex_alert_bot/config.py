@@ -6,6 +6,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
@@ -33,6 +34,12 @@ class Settings:
     @classmethod
     def from_environment(cls, environment: Mapping[str, str]) -> Settings:
         """Build settings from an environment mapping without reading files."""
+        timezone = environment.get("APP_TIMEZONE", DEFAULT_TIMEZONE)
+        try:
+            ZoneInfo(timezone)
+        except (ValueError, ZoneInfoNotFoundError) as error:
+            raise ValueError("APP_TIMEZONE must be a valid IANA timezone") from error
+
         alert_window_start_hour = _parse_hour(
             "ALERT_WINDOW_START_HOUR",
             environment.get("ALERT_WINDOW_START_HOUR", str(DEFAULT_ALERT_WINDOW_START_HOUR)),
@@ -46,7 +53,7 @@ class Settings:
 
         return cls(
             dry_run=_parse_boolean(environment.get("DRY_RUN", str(DEFAULT_DRY_RUN))),
-            timezone=environment.get("APP_TIMEZONE", DEFAULT_TIMEZONE),
+            timezone=timezone,
             alert_window_start_hour=alert_window_start_hour,
             alert_window_end_hour=alert_window_end_hour,
             log_level=environment.get("LOG_LEVEL", DEFAULT_LOG_LEVEL).upper(),
