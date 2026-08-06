@@ -42,7 +42,23 @@ VPS Python app
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -r requirements-dev.txt
 cp .env.example .env
 ```
 
-The first implementation should support dry-run mode before any live Telegram alerts are sent.
+Configuration is read from `.env` and environment variables. Explicit environment variables take
+precedence over values in `.env`.
+
+```bash
+python -m forex_alert_bot --dry-run
+```
+
+The scaffold logs that dry-run mode is active and does not perform any signal checks or send alerts.
+
+## Checks
+
+```bash
+python -m pytest
+ruff check .
+ruff format --check .
+```
