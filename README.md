@@ -67,6 +67,11 @@ It runs at :00 and :30 during the configured local alert window (7:00 AM through
 10:00 PM in `America/Detroit` by default). Set `DRY_RUN=true` to log each scheduled
 run without making a real alert or network send.
 
+Each scheduled run is saved to SQLite. By default, the database is created at
+`data/forex-alert-bot.sqlite3`; set `DATABASE_PATH` to use another local path. The
+database keeps runs, candidate signals, news-analysis input/output, sent alerts, and
+errors so future alerts can be inspected back to their source data.
+
 ## Telegram test
 
 Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env` (or as explicit environment

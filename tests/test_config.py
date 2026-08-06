@@ -10,6 +10,7 @@ def test_settings_use_safe_defaults() -> None:
     assert settings.timezone == "America/Detroit"
     assert settings.alert_window_start_hour == 7
     assert settings.alert_window_end_hour == 22
+    assert settings.database_path.name == "forex-alert-bot.sqlite3"
     assert settings.log_level == "INFO"
 
 
@@ -33,6 +34,12 @@ def test_settings_read_environment_values() -> None:
     assert settings.log_level == "DEBUG"
     assert settings.telegram_bot_token == "test-token"
     assert settings.telegram_chat_id == "12345"
+
+
+def test_settings_read_database_path() -> None:
+    settings = Settings.from_environment({"DATABASE_PATH": "var/logs/alerts.sqlite3"})
+
+    assert str(settings.database_path) == "var/logs/alerts.sqlite3"
 
 
 def test_settings_reject_invalid_boolean_values() -> None:

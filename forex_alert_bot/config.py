@@ -16,6 +16,7 @@ DEFAULT_DRY_RUN = True
 DEFAULT_TIMEZONE = "America/Detroit"
 DEFAULT_ALERT_WINDOW_START_HOUR = 7
 DEFAULT_ALERT_WINDOW_END_HOUR = 22
+DEFAULT_DATABASE_PATH = Path("data/forex-alert-bot.sqlite3")
 DEFAULT_LOG_LEVEL = "INFO"
 
 
@@ -27,6 +28,7 @@ class Settings:
     timezone: str = DEFAULT_TIMEZONE
     alert_window_start_hour: int = DEFAULT_ALERT_WINDOW_START_HOUR
     alert_window_end_hour: int = DEFAULT_ALERT_WINDOW_END_HOUR
+    database_path: Path = DEFAULT_DATABASE_PATH
     log_level: str = DEFAULT_LOG_LEVEL
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
@@ -56,6 +58,7 @@ class Settings:
             timezone=timezone,
             alert_window_start_hour=alert_window_start_hour,
             alert_window_end_hour=alert_window_end_hour,
+            database_path=Path(environment.get("DATABASE_PATH", str(DEFAULT_DATABASE_PATH))),
             log_level=environment.get("LOG_LEVEL", DEFAULT_LOG_LEVEL).upper(),
             telegram_bot_token=environment.get("TELEGRAM_BOT_TOKEN"),
             telegram_chat_id=environment.get("TELEGRAM_CHAT_ID"),
