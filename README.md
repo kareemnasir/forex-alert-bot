@@ -64,13 +64,24 @@ python -m forex_alert_bot --schedule
 ```
 
 It runs at :00 and :30 during the configured local alert window (7:00 AM through
-10:00 PM in `America/Detroit` by default). Set `DRY_RUN=true` to log each scheduled
-run without making a real alert or network send.
+10:00 PM in `America/Detroit` by default). Set `DRY_RUN=true` to prevent real alerts;
+market-data fetches still run so the configured provider can be checked safely.
 
 Each scheduled run is saved to SQLite. By default, the database is created at
 `data/forex-alert-bot.sqlite3`; set `DATABASE_PATH` to use another local path. The
 database keeps runs, candidate signals, news-analysis input/output, sent alerts, and
 errors so future alerts can be inspected back to their source data.
+
+## Market data
+
+The first provider is Twelve Data. Create an API key, then set `MARKET_DATA_API_KEY` in
+`.env`. Configure the comma-separated `MARKET_DATA_PAIRS` and `MARKET_DATA_TIMEFRAMES`
+values as needed. The defaults fetch `EUR/USD`, `GBP/USD`, and `USD/JPY` on `15min` and
+`1h` timeframes. Candles are normalized to UTC with timestamp, open, high, low, close,
+and an optional volume value.
+
+Provider failures, rate limits, missing data, and malformed responses do not stop the
+scheduler. They are recorded as `market-data` errors in the SQLite run log.
 
 ## Telegram test
 

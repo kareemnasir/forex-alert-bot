@@ -6,6 +6,7 @@ import pytest
 
 from forex_alert_bot.config import Settings
 from forex_alert_bot.database import SQLiteLog
+from forex_alert_bot.market_data import MarketDataRateLimitError
 from forex_alert_bot.scheduler import create_scheduler, run_signal_check
 
 
@@ -62,13 +63,13 @@ def test_scheduler_uses_configured_timezone_and_window() -> None:
     ) == datetime(2026, 8, 7, 8, 0, tzinfo=timezone)
 
 
-def test_dry_run_callback_logs_that_no_alert_or_network_send_was_made(caplog) -> None:
+def test_dry_run_callback_logs_that_no_alert_was_sent(caplog) -> None:
     caplog.set_level("INFO")
 
     run_signal_check(Settings(dry_run=True))
 
     assert "Scheduled signal check started." in caplog.text
-    assert "Dry run: no real alert or network send was made." in caplog.text
+    assert "Dry run: no real alert was sent." in caplog.text
 
 
 def test_scheduled_signal_check_records_a_completed_run(tmp_path) -> None:
@@ -116,6 +117,9 @@ def test_completion_failure_attempts_to_record_a_failed_run() -> None:
         def complete_run(self, run_id: int) -> None:
             raise RuntimeError("database completion failed")
 
+        def record_error(self, run_id: int, *, stage: str, error: Exception) -> None:
+            pass
+
         def fail_run(self, run_id: int, *, stage: str, error: Exception) -> None:
             recorded_failures.append(error)
 
@@ -147,3 +151,122 @@ def test_failure_persistence_does_not_mask_signal_check_error(monkeypatch) -> No
 
     with pytest.raises(RuntimeError, match="signal check failed"):
         run_signal_check(settings, database=DatabaseStub())
+
+
+def test_scheduler_records_market_data_failures_without_crashing(tmp_path) -> None:
+    database = SQLiteLog(tmp_path / "forex-alert-bot.sqlite3")
+    settings = Settings(
+        database_path=database.path,
+        market_data_pairs=("EUR/USD",),
+        market_data_timeframes=("15min",),
+    )
+
+    class RateLimitedProvider:
+        def fetch_candles(self, pair: str, timeframe: str) -> list[object]:
+            raise MarketDataRateLimitError("API credits exhausted")
+
+    run_signal_check(settings, database=database, market_data_provider=RateLimitedProvider())
+
+    assert database.get_run(1)["status"] == "completed"
+    assert database.get_errors(1) == [
+        {
+            "run_id": 1,
+            "stage": "market-data",
+            "error_type": "MarketDataRateLimitError",
+            "message": "API credits exhausted",
+        }
+    ]
+
+
+def test_scheduler_safely_records_unexpected_provider_fetch_failures(tmp_path) -> None:
+    database = SQLiteLog(tmp_path / "forex-alert-bot.sqlite3")
+    settings = Settings(
+        database_path=database.path,
+        market_data_pairs=("EUR/USD",),
+        market_data_timeframes=("15min",),
+    )
+
+    class BrokenProvider:
+        def fetch_candles(self, pair: str, timeframe: str) -> list[object]:
+            raise RuntimeError("provider connection broke")
+
+    run_signal_check(settings, database=database, market_data_provider=BrokenProvider())
+
+    assert database.get_run(1)["status"] == "completed"
+    assert database.get_errors(1)[0]["error_type"] == "RuntimeError"
+
+
+def test_scheduler_stops_remaining_fetches_after_a_rate_limit(tmp_path) -> None:
+    database = SQLiteLog(tmp_path / "forex-alert-bot.sqlite3")
+    settings = Settings(
+        database_path=database.path,
+        market_data_pairs=("EUR/USD", "GBP/USD"),
+        market_data_timeframes=("15min", "1h"),
+    )
+    calls: list[tuple[str, str]] = []
+
+    class RateLimitedProvider:
+        def fetch_candles(self, pair: str, timeframe: str) -> list[object]:
+            calls.append((pair, timeframe))
+            raise MarketDataRateLimitError("API credits exhausted")
+
+    run_signal_check(settings, database=database, market_data_provider=RateLimitedProvider())
+
+    assert calls == [("EUR/USD", "15min")]
+    assert database.get_run(1)["status"] == "completed"
+    assert len(database.get_errors(1)) == 1
+
+
+def test_scheduler_keeps_running_when_market_data_error_logging_fails() -> None:
+    completions: list[int] = []
+
+    class DatabaseStub:
+        def start_run(self, *, dry_run: bool) -> int:
+            return 1
+
+        def record_error(self, run_id: int, *, stage: str, error: Exception) -> None:
+            raise RuntimeError("database unavailable")
+
+        def complete_run(self, run_id: int) -> None:
+            completions.append(run_id)
+
+        def fail_run(self, run_id: int, *, stage: str, error: Exception) -> None:
+            raise AssertionError("recoverable fetch failure should not fail the run")
+
+    class FailingProvider:
+        def fetch_candles(self, pair: str, timeframe: str) -> list[object]:
+            raise RuntimeError("provider unavailable")
+
+    run_signal_check(
+        Settings(market_data_pairs=("EUR/USD",), market_data_timeframes=("15min",)),
+        database=DatabaseStub(),
+        market_data_provider=FailingProvider(),
+    )
+
+    assert completions == [1]
+
+
+def test_scheduler_fetches_each_configured_pair_and_timeframe(tmp_path) -> None:
+    database = SQLiteLog(tmp_path / "forex-alert-bot.sqlite3")
+    settings = Settings(
+        database_path=database.path,
+        market_data_pairs=("EUR/USD", "GBP/USD"),
+        market_data_timeframes=("15min", "1h"),
+    )
+    calls: list[tuple[str, str]] = []
+
+    class RecordingProvider:
+        def fetch_candles(self, pair: str, timeframe: str) -> list[object]:
+            calls.append((pair, timeframe))
+            return []
+
+    run_signal_check(settings, database=database, market_data_provider=RecordingProvider())
+
+    assert calls == [
+        ("EUR/USD", "15min"),
+        ("EUR/USD", "1h"),
+        ("GBP/USD", "15min"),
+        ("GBP/USD", "1h"),
+    ]
+    assert database.get_run(1)["status"] == "completed"
+    assert database.get_errors(1) == []
