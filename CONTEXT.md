@@ -15,6 +15,11 @@ A possible BUY, SELL, or other watch outcome emitted by one technical strategy d
 run.
 _Avoid_: Trade, alert
 
+**Invalidation Level**:
+The market price beyond which a candidate signal's setup no longer holds. It is context
+for a manual decision, not an order placed with a broker.
+_Avoid_: Stop-loss order, trade exit
+
 **News Analysis**:
 The captured news input and sentiment output evaluated for a candidate signal during a
 run.
