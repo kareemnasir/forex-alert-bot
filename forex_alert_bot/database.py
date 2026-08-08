@@ -112,6 +112,17 @@ class SQLiteLog:
                 (run_id, stage, type(error).__name__, str(error), _timestamp()),
             )
 
+    def record_error(self, run_id: int, *, stage: str, error: Exception) -> None:
+        """Record a recoverable run error without changing the run outcome."""
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO errors (run_id, stage, error_type, message, occurred_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (run_id, stage, type(error).__name__, str(error), _timestamp()),
+            )
+
     def get_run(self, run_id: int) -> dict[str, object]:
         """Return an inspectable run record."""
         with self._connect() as connection:
