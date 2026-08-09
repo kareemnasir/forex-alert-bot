@@ -13,6 +13,7 @@ from forex_alert_bot.market_data import Candle
 
 TREND_PULLBACK_STRATEGY = "trend-pullback"
 BREAKOUT_STRATEGY = "breakout"
+MEAN_REVERSION_STRATEGY = "mean-reversion"
 
 
 class SignalDirection(StrEnum):
@@ -78,6 +79,49 @@ class BreakoutConfig:
 
 
 @dataclass(frozen=True)
+class MeanReversionConfig:
+    """Centralized thresholds for the v1 Mean Reversion rules."""
+
+    signal_score: int = 65
+    range_lookback: int = 20
+    maximum_adx: float = 25.0
+    edge_proximity_atr: float = 0.5
+    buy_rsi_max: float = 35.0
+    sell_rsi_min: float = 65.0
+    maximum_atr_range_fraction: float = 0.5
+    invalidation_atr_buffer: float = 0.25
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.signal_score, bool)
+            or not isinstance(self.signal_score, int)
+            or not 0 <= self.signal_score <= 80
+        ):
+            raise ValueError("signal_score must be an integer from 0 to 80")
+        if (
+            isinstance(self.range_lookback, bool)
+            or not isinstance(self.range_lookback, int)
+            or self.range_lookback < 1
+        ):
+            raise ValueError("range_lookback must be a positive integer")
+        if not math.isfinite(self.maximum_adx) or not 0 <= self.maximum_adx <= 100:
+            raise ValueError("maximum_adx must be finite and from 0 to 100")
+        if not math.isfinite(self.edge_proximity_atr) or self.edge_proximity_atr < 0:
+            raise ValueError("edge_proximity_atr must be finite and nonnegative")
+        if not math.isfinite(self.buy_rsi_max) or not 0 <= self.buy_rsi_max <= 100:
+            raise ValueError("buy_rsi_max must be finite and from 0 to 100")
+        if not math.isfinite(self.sell_rsi_min) or not 0 <= self.sell_rsi_min <= 100:
+            raise ValueError("sell_rsi_min must be finite and from 0 to 100")
+        if (
+            not math.isfinite(self.maximum_atr_range_fraction)
+            or self.maximum_atr_range_fraction < 0
+        ):
+            raise ValueError("maximum_atr_range_fraction must be finite and nonnegative")
+        if not math.isfinite(self.invalidation_atr_buffer) or self.invalidation_atr_buffer < 0:
+            raise ValueError("invalidation_atr_buffer must be finite and nonnegative")
+
+
+@dataclass(frozen=True)
 class TrendPullbackConfig:
     """Centralized thresholds for the v1 Trend Pullback rules."""
 
@@ -109,6 +153,120 @@ class TrendPullbackConfig:
             raise ValueError("swing_lookback must be a positive integer")
         if not math.isfinite(self.invalidation_atr_buffer) or self.invalidation_atr_buffer < 0:
             raise ValueError("invalidation_atr_buffer must be finite and nonnegative")
+
+
+def evaluate_mean_reversion(
+    *,
+    pair: str,
+    timeframe: str,
+    candles: Sequence[Candle],
+    indicators: Sequence[IndicatorSnapshot],
+    config: MeanReversionConfig = MeanReversionConfig(),
+) -> CandidateSignal | None:
+    """Return a range-edge Mean Reversion candidate, or None when rules do not agree."""
+    if len(candles) < config.range_lookback + 1 or len(indicators) < 2:
+        return None
+
+    range_window = candles[-(config.range_lookback + 1) :]
+    if any(
+        previous.timestamp >= current.timestamp
+        for previous, current in zip(range_window, range_window[1:])
+    ):
+        return None
+
+    previous_indicators, latest_indicators = indicators[-2:]
+    previous_candle, latest_candle = range_window[-2:]
+    if (
+        previous_indicators.timestamp != previous_candle.timestamp
+        or latest_indicators.timestamp != latest_candle.timestamp
+        or previous_indicators.close != previous_candle.close
+        or latest_indicators.close != latest_candle.close
+    ):
+        return None
+
+    atr = latest_indicators.atr_14
+    adx = latest_indicators.adx_14
+    previous_rsi = previous_indicators.rsi_14
+    latest_rsi = latest_indicators.rsi_14
+    if any(
+        value is None or not math.isfinite(value) for value in (atr, adx, previous_rsi, latest_rsi)
+    ):
+        return None
+    if atr <= 0 or not 0 <= previous_rsi <= 100 or not 0 <= latest_rsi <= 100:
+        return None
+    if adx < 0 or adx > config.maximum_adx:
+        return None
+
+    recent_range = range_window[:-1]
+    range_high = max(candle.high for candle in recent_range)
+    range_low = min(candle.low for candle in recent_range)
+    range_width = range_high - range_low
+    if range_width <= 0:
+        return None
+    atr_range_fraction = atr / range_width
+    if atr_range_fraction > config.maximum_atr_range_fraction:
+        return None
+
+    support_distance_atr = abs(latest_candle.close - range_low) / atr
+    resistance_distance_atr = abs(range_high - latest_candle.close) / atr
+    recovered_from_oversold = previous_rsi <= config.buy_rsi_max and latest_rsi > previous_rsi
+    rolled_over_from_overbought = previous_rsi >= config.sell_rsi_min and latest_rsi < previous_rsi
+    if support_distance_atr <= config.edge_proximity_atr and (
+        latest_rsi <= config.buy_rsi_max or recovered_from_oversold
+    ):
+        direction = SignalDirection.BUY
+        reference_level = range_low
+        edge_name = "support"
+        edge_distance_atr = support_distance_atr
+        invalidation_level = range_low - (atr * config.invalidation_atr_buffer)
+        if latest_candle.close <= invalidation_level:
+            return None
+        rsi_reason = (
+            f"RSI recovered from {previous_rsi:.1f} to {latest_rsi:.1f} after an oversold reading."
+            if recovered_from_oversold
+            else f"RSI is oversold at {latest_rsi:.1f}."
+        )
+    elif resistance_distance_atr <= config.edge_proximity_atr and (
+        latest_rsi >= config.sell_rsi_min or rolled_over_from_overbought
+    ):
+        direction = SignalDirection.SELL
+        reference_level = range_high
+        edge_name = "resistance"
+        edge_distance_atr = resistance_distance_atr
+        invalidation_level = range_high + (atr * config.invalidation_atr_buffer)
+        if latest_candle.close >= invalidation_level:
+            return None
+        rsi_reason = (
+            f"RSI rolled over from {previous_rsi:.1f} to {latest_rsi:.1f} "
+            "after an overbought reading."
+            if rolled_over_from_overbought
+            else f"RSI is overbought at {latest_rsi:.1f}."
+        )
+    else:
+        return None
+
+    return CandidateSignal(
+        pair=pair,
+        timeframe=timeframe,
+        strategy=MEAN_REVERSION_STRATEGY,
+        direction=direction,
+        score=config.signal_score,
+        reasons=(
+            f"ADX {adx:.1f} indicates a ranging market (maximum {config.maximum_adx:.1f}).",
+            f"Latest close {latest_candle.close:.5f} is {edge_distance_atr:.2f} ATR "
+            f"from the {config.range_lookback}-candle range {edge_name} "
+            f"{reference_level:.5f}.",
+            rsi_reason,
+            f"ATR is {atr_range_fraction:.2f} of the recent range width.",
+        ),
+        invalidation_level=invalidation_level,
+        metadata=CandidateSignalMetadata(
+            signal_timestamp=latest_candle.timestamp,
+            cooldown_key=(f"{MEAN_REVERSION_STRATEGY}:{pair}:{timeframe}:{direction.value}"),
+            reference_level=reference_level,
+            range_lookback=config.range_lookback,
+        ),
+    )
 
 
 def evaluate_breakout(
