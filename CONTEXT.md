@@ -15,6 +15,11 @@ A possible BUY, SELL, or other watch outcome emitted by one technical strategy d
 run.
 _Avoid_: Trade, alert
 
+**Candidate Metadata**:
+Immutable setup facts attached to a Candidate Signal so later processing can identify
+its source and compare it for cooldown or deduplication.
+_Avoid_: Cooldown decision, alert history
+
 **Invalidation Level**:
 The market price beyond which a candidate signal's setup no longer holds. It is context
 for a manual decision, not an order placed with a broker.
