@@ -20,6 +20,16 @@ Immutable setup facts attached to a Candidate Signal so later processing can ide
 its source and compare it for cooldown or deduplication.
 _Avoid_: Cooldown decision, alert history
 
+**Alert Decision**:
+The scorer's final assessment for one pair and timeframe, including a direction when
+one side wins and an explicit alert level that may be No Alert.
+_Avoid_: Alert, trade recommendation
+
+**Alert Level**:
+The outcome band assigned to an Alert Decision: Strong Watch, Watch, Weak Watch, or
+No Alert.
+_Avoid_: Signal direction, confidence label
+
 **Invalidation Level**:
 The market price beyond which a candidate signal's setup no longer holds. It is context
 for a manual decision, not an order placed with a broker.
