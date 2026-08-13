@@ -15,6 +15,7 @@ def test_settings_use_safe_defaults() -> None:
     assert settings.market_data_api_key is None
     assert settings.market_data_pairs == ("EUR/USD", "GBP/USD", "USD/JPY")
     assert settings.market_data_timeframes == ("15min", "1h")
+    assert settings.alert_cooldown_minutes == 120
     assert settings.log_level == "INFO"
 
 
@@ -30,6 +31,7 @@ def test_settings_read_environment_values() -> None:
             "MARKET_DATA_API_KEY": "market-data-token",
             "MARKET_DATA_PAIRS": "EUR/USD, AUD/USD",
             "MARKET_DATA_TIMEFRAMES": "5min, 1h",
+            "ALERT_COOLDOWN_MINUTES": "45",
             "TELEGRAM_BOT_TOKEN": "test-token",
             "TELEGRAM_CHAT_ID": "12345",
         }
@@ -44,6 +46,7 @@ def test_settings_read_environment_values() -> None:
     assert settings.market_data_api_key == "market-data-token"
     assert settings.market_data_pairs == ("EUR/USD", "AUD/USD")
     assert settings.market_data_timeframes == ("5min", "1h")
+    assert settings.alert_cooldown_minutes == 45
     assert settings.telegram_bot_token == "test-token"
     assert settings.telegram_chat_id == "12345"
 
@@ -94,6 +97,12 @@ def test_settings_reject_invalid_market_data_configuration(
 ) -> None:
     with pytest.raises(ValueError, match=variable):
         Settings.from_environment(environment)
+
+
+@pytest.mark.parametrize("value", ["later", "-1", "1.5"])
+def test_settings_reject_invalid_alert_cooldown(value: str) -> None:
+    with pytest.raises(ValueError, match="ALERT_COOLDOWN_MINUTES"):
+        Settings.from_environment({"ALERT_COOLDOWN_MINUTES": value})
 
 
 def test_loader_uses_environment_values_over_dotenv(tmp_path, monkeypatch) -> None:

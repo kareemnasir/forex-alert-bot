@@ -72,6 +72,17 @@ Each scheduled run is saved to SQLite. By default, the database is created at
 database keeps runs, candidate signals, news-analysis input/output, sent alerts, and
 errors so future alerts can be inspected back to their source data.
 
+## Alert cooldown
+
+Set `ALERT_COOLDOWN_MINUTES` to control how long a sent alert suppresses another alert
+for the same pair, direction, timeframe, alert level, and contributing strategy set. The
+default is 120 minutes; set it to `0` to disable the cooldown.
+
+The cooldown service checks fingerprinted sent-alert history before delivery. A blocked
+duplicate is saved in the SQLite `alert_skips` table with the matching alert ID and reason,
+so skipped decisions remain inspectable. This policy layer does not send Telegram messages;
+a future delivery workflow can call it immediately before sending.
+
 ## Market data
 
 The first provider is Twelve Data. Create an API key, then set `MARKET_DATA_API_KEY` in

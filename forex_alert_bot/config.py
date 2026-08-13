@@ -21,6 +21,7 @@ DEFAULT_DATABASE_PATH = Path("data/forex-alert-bot.sqlite3")
 DEFAULT_MARKET_DATA_PROVIDER = "twelve_data"
 DEFAULT_MARKET_DATA_PAIRS = ("EUR/USD", "GBP/USD", "USD/JPY")
 DEFAULT_MARKET_DATA_TIMEFRAMES = ("15min", "1h")
+DEFAULT_ALERT_COOLDOWN_MINUTES = 120
 DEFAULT_LOG_LEVEL = "INFO"
 _FOREX_PAIR_PATTERN = re.compile(r"^[A-Z]{3}/[A-Z]{3}$")
 _SUPPORTED_TIMEFRAMES = {
@@ -52,6 +53,7 @@ class Settings:
     market_data_api_key: str | None = None
     market_data_pairs: tuple[str, ...] = DEFAULT_MARKET_DATA_PAIRS
     market_data_timeframes: tuple[str, ...] = DEFAULT_MARKET_DATA_TIMEFRAMES
+    alert_cooldown_minutes: int = DEFAULT_ALERT_COOLDOWN_MINUTES
     log_level: str = DEFAULT_LOG_LEVEL
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
@@ -95,6 +97,9 @@ class Settings:
             ),
             market_data_timeframes=_parse_timeframes(
                 environment.get("MARKET_DATA_TIMEFRAMES", ",".join(DEFAULT_MARKET_DATA_TIMEFRAMES))
+            ),
+            alert_cooldown_minutes=_parse_alert_cooldown_minutes(
+                environment.get("ALERT_COOLDOWN_MINUTES", str(DEFAULT_ALERT_COOLDOWN_MINUTES))
             ),
             log_level=environment.get("LOG_LEVEL", DEFAULT_LOG_LEVEL).upper(),
             telegram_bot_token=environment.get("TELEGRAM_BOT_TOKEN"),
@@ -140,3 +145,13 @@ def _parse_timeframes(value: str) -> tuple[str, ...]:
     if not timeframes or any(timeframe not in _SUPPORTED_TIMEFRAMES for timeframe in timeframes):
         raise ValueError("MARKET_DATA_TIMEFRAMES contains an unsupported Twelve Data interval")
     return timeframes
+
+
+def _parse_alert_cooldown_minutes(value: str) -> int:
+    try:
+        minutes = int(value)
+    except ValueError as error:
+        raise ValueError("ALERT_COOLDOWN_MINUTES must be a nonnegative integer") from error
+    if minutes < 0:
+        raise ValueError("ALERT_COOLDOWN_MINUTES must be a nonnegative integer")
+    return minutes
