@@ -15,6 +15,10 @@ def test_settings_use_safe_defaults() -> None:
     assert settings.market_data_api_key is None
     assert settings.market_data_pairs == ("EUR/USD", "GBP/USD", "USD/JPY")
     assert settings.market_data_timeframes == ("15min", "1h")
+    assert settings.news_provider == "marketaux"
+    assert settings.news_api_key is None
+    assert settings.news_max_age_hours == 24
+    assert settings.news_max_items == 10
     assert settings.alert_cooldown_minutes == 120
     assert settings.log_level == "INFO"
 
@@ -57,6 +61,22 @@ def test_settings_read_database_path() -> None:
     assert str(settings.database_path) == "var/logs/alerts.sqlite3"
 
 
+def test_settings_read_news_environment_values() -> None:
+    settings = Settings.from_environment(
+        {
+            "NEWS_PROVIDER": "marketaux",
+            "NEWS_API_KEY": "marketaux-token",
+            "NEWS_MAX_AGE_HOURS": "6",
+            "NEWS_MAX_ITEMS": "12",
+        }
+    )
+
+    assert settings.news_provider == "marketaux"
+    assert settings.news_api_key == "marketaux-token"
+    assert settings.news_max_age_hours == 6
+    assert settings.news_max_items == 12
+
+
 def test_settings_reject_invalid_boolean_values() -> None:
     with pytest.raises(ValueError, match="DRY_RUN"):
         Settings.from_environment({"DRY_RUN": "sometimes"})
@@ -90,9 +110,12 @@ def test_settings_reject_invalid_alert_windows(environment: dict[str, str], vari
         ({"MARKET_DATA_PROVIDER": "other"}, "MARKET_DATA_PROVIDER"),
         ({"MARKET_DATA_PAIRS": "EURUSD"}, "MARKET_DATA_PAIRS"),
         ({"MARKET_DATA_TIMEFRAMES": "10min"}, "MARKET_DATA_TIMEFRAMES"),
+        ({"NEWS_PROVIDER": "other"}, "NEWS_PROVIDER"),
+        ({"NEWS_MAX_AGE_HOURS": "0"}, "NEWS_MAX_AGE_HOURS"),
+        ({"NEWS_MAX_ITEMS": "many"}, "NEWS_MAX_ITEMS"),
     ],
 )
-def test_settings_reject_invalid_market_data_configuration(
+def test_settings_reject_invalid_provider_configuration(
     environment: dict[str, str], variable: str
 ) -> None:
     with pytest.raises(ValueError, match=variable):

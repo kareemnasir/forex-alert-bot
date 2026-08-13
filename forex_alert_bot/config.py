@@ -21,6 +21,9 @@ DEFAULT_DATABASE_PATH = Path("data/forex-alert-bot.sqlite3")
 DEFAULT_MARKET_DATA_PROVIDER = "twelve_data"
 DEFAULT_MARKET_DATA_PAIRS = ("EUR/USD", "GBP/USD", "USD/JPY")
 DEFAULT_MARKET_DATA_TIMEFRAMES = ("15min", "1h")
+DEFAULT_NEWS_PROVIDER = "marketaux"
+DEFAULT_NEWS_MAX_AGE_HOURS = 24
+DEFAULT_NEWS_MAX_ITEMS = 10
 DEFAULT_ALERT_COOLDOWN_MINUTES = 120
 DEFAULT_LOG_LEVEL = "INFO"
 _FOREX_PAIR_PATTERN = re.compile(r"^[A-Z]{3}/[A-Z]{3}$")
@@ -53,6 +56,10 @@ class Settings:
     market_data_api_key: str | None = None
     market_data_pairs: tuple[str, ...] = DEFAULT_MARKET_DATA_PAIRS
     market_data_timeframes: tuple[str, ...] = DEFAULT_MARKET_DATA_TIMEFRAMES
+    news_provider: str = DEFAULT_NEWS_PROVIDER
+    news_api_key: str | None = None
+    news_max_age_hours: int = DEFAULT_NEWS_MAX_AGE_HOURS
+    news_max_items: int = DEFAULT_NEWS_MAX_ITEMS
     alert_cooldown_minutes: int = DEFAULT_ALERT_COOLDOWN_MINUTES
     log_level: str = DEFAULT_LOG_LEVEL
     telegram_bot_token: str | None = None
@@ -84,6 +91,10 @@ class Settings:
         if market_data_provider != "twelve_data":
             raise ValueError("MARKET_DATA_PROVIDER must be twelve_data")
 
+        news_provider = environment.get("NEWS_PROVIDER", DEFAULT_NEWS_PROVIDER).lower()
+        if news_provider != "marketaux":
+            raise ValueError("NEWS_PROVIDER must be marketaux")
+
         return cls(
             dry_run=_parse_boolean(environment.get("DRY_RUN", str(DEFAULT_DRY_RUN))),
             timezone=timezone,
@@ -97,6 +108,16 @@ class Settings:
             ),
             market_data_timeframes=_parse_timeframes(
                 environment.get("MARKET_DATA_TIMEFRAMES", ",".join(DEFAULT_MARKET_DATA_TIMEFRAMES))
+            ),
+            news_provider=news_provider,
+            news_api_key=environment.get("NEWS_API_KEY"),
+            news_max_age_hours=_parse_positive_integer(
+                "NEWS_MAX_AGE_HOURS",
+                environment.get("NEWS_MAX_AGE_HOURS", str(DEFAULT_NEWS_MAX_AGE_HOURS)),
+            ),
+            news_max_items=_parse_positive_integer(
+                "NEWS_MAX_ITEMS",
+                environment.get("NEWS_MAX_ITEMS", str(DEFAULT_NEWS_MAX_ITEMS)),
             ),
             alert_cooldown_minutes=_parse_alert_cooldown_minutes(
                 environment.get("ALERT_COOLDOWN_MINUTES", str(DEFAULT_ALERT_COOLDOWN_MINUTES))
@@ -155,3 +176,13 @@ def _parse_alert_cooldown_minutes(value: str) -> int:
     if minutes < 0:
         raise ValueError("ALERT_COOLDOWN_MINUTES must be a nonnegative integer")
     return minutes
+
+
+def _parse_positive_integer(variable: str, value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise ValueError(f"{variable} must be a positive integer") from error
+    if parsed <= 0:
+        raise ValueError(f"{variable} must be a positive integer")
+    return parsed
