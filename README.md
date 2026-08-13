@@ -94,6 +94,18 @@ and an optional volume value.
 Provider failures, rate limits, missing data, and malformed responses do not stop the
 scheduler. They are recorded as `market-data` errors in the SQLite run log.
 
+## News
+
+Marketaux is the first news provider. Set `NEWS_API_KEY` in `.env`, and configure
+`NEWS_MAX_AGE_HOURS` and `NEWS_MAX_ITEMS` to control the recent article window and
+returned item cap. Each scheduled run makes one bounded request for all configured
+`MARKET_DATA_PAIRS`, then filters stale or irrelevant articles and normalizes relevant
+results to UTC with source, URL/snippet, and pair/currency metadata.
+
+Missing credentials, empty results, provider errors, and malformed articles do not stop
+the scheduler. Recoverable provider failures are recorded as `news` errors. This fetcher
+does not call Ollama or perform sentiment analysis; that remains a separate issue.
+
 ## Telegram test
 
 Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env` (or as explicit environment
