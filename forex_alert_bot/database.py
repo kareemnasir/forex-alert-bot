@@ -5,9 +5,26 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 
 from forex_alert_bot.cooldown import AlertHistoryEntry, DuplicateAlertSkip
+
+
+class DecisionStage(StrEnum):
+    """Persisted stage of an alert decision."""
+
+    TECHNICAL = "technical"
+    FINAL = "final"
+
+
+class DeliverySkipType(StrEnum):
+    """Reason category for a qualifying alert that was not delivered."""
+
+    FORMATTING = "formatting"
+    DRY_RUN = "dry_run"
+    DELIVERY_UNAVAILABLE = "delivery_unavailable"
+    DELIVERY_ERROR = "delivery_error"
 
 
 class SQLiteLog:
@@ -56,11 +73,37 @@ class SQLiteLog:
                     status TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS alert_decisions (
+                    id INTEGER PRIMARY KEY,
+                    run_id INTEGER NOT NULL REFERENCES runs(id),
+                    news_analysis_id INTEGER REFERENCES news_analyses(id),
+                    stage TEXT NOT NULL CHECK (stage IN ('technical', 'final')),
+                    pair TEXT,
+                    direction TEXT,
+                    timeframe TEXT,
+                    alert_level TEXT NOT NULL,
+                    score INTEGER NOT NULL,
+                    payload_json TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS score_adjustments (
+                    id INTEGER PRIMARY KEY,
+                    run_id INTEGER NOT NULL REFERENCES runs(id),
+                    technical_decision_id INTEGER NOT NULL REFERENCES alert_decisions(id),
+                    final_decision_id INTEGER NOT NULL REFERENCES alert_decisions(id),
+                    news_analysis_id INTEGER NOT NULL REFERENCES news_analyses(id),
+                    technical_score INTEGER NOT NULL,
+                    score_delta INTEGER NOT NULL,
+                    final_score INTEGER NOT NULL,
+                    reasons_json TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS alerts (
                     id INTEGER PRIMARY KEY,
                     run_id INTEGER NOT NULL REFERENCES runs(id),
                     candidate_signal_id INTEGER NOT NULL REFERENCES candidate_signals(id),
                     news_analysis_id INTEGER NOT NULL REFERENCES news_analyses(id),
+                    alert_decision_id INTEGER REFERENCES alert_decisions(id),
                     fingerprint TEXT NOT NULL,
                     message TEXT NOT NULL,
                     sent_at TEXT NOT NULL
@@ -89,8 +132,34 @@ class SQLiteLog:
                     skipped_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS alert_delivery_skips (
+                    id INTEGER PRIMARY KEY,
+                    run_id INTEGER NOT NULL REFERENCES runs(id),
+                    alert_decision_id INTEGER NOT NULL REFERENCES alert_decisions(id),
+                    skip_type TEXT NOT NULL CHECK (
+                        skip_type IN (
+                            'formatting',
+                            'dry_run',
+                            'delivery_unavailable',
+                            'delivery_error'
+                        )
+                    ),
+                    reason TEXT NOT NULL,
+                    fingerprint TEXT,
+                    message TEXT,
+                    skipped_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS errors_by_run_id ON errors (run_id, id);
                 CREATE INDEX IF NOT EXISTS alert_skips_by_run_id ON alert_skips (run_id, id);
+                CREATE INDEX IF NOT EXISTS alert_decisions_by_run_id
+                ON alert_decisions (run_id, id);
+                CREATE INDEX IF NOT EXISTS score_adjustments_by_run_id
+                ON score_adjustments (run_id, id);
+                CREATE UNIQUE INDEX IF NOT EXISTS score_adjustments_by_final_decision_id
+                ON score_adjustments (final_decision_id);
+                CREATE INDEX IF NOT EXISTS alert_delivery_skips_by_run_id
+                ON alert_delivery_skips (run_id, id);
                 """
             )
             alert_columns = {
@@ -98,6 +167,8 @@ class SQLiteLog:
             }
             if "fingerprint" not in alert_columns:
                 connection.execute("ALTER TABLE alerts ADD COLUMN fingerprint TEXT")
+            if "alert_decision_id" not in alert_columns:
+                connection.execute("ALTER TABLE alerts ADD COLUMN alert_decision_id INTEGER")
             connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS alerts_by_fingerprint_sent_at
@@ -244,6 +315,271 @@ class SQLiteLog:
             )
         return cursor.lastrowid
 
+    def record_alert_decision(
+        self,
+        run_id: int,
+        *,
+        stage: DecisionStage | str,
+        pair: str | None,
+        direction: str | None,
+        timeframe: str | None,
+        alert_level: str,
+        score: int,
+        news_analysis_id: int | None,
+        payload: object,
+    ) -> int:
+        """Record one technical or final alert decision."""
+        stage = DecisionStage(stage)
+        with self._connect() as connection:
+            if news_analysis_id is not None:
+                news_run = connection.execute(
+                    "SELECT run_id FROM news_analyses WHERE id = ?", (news_analysis_id,)
+                ).fetchone()
+                if news_run != (run_id,):
+                    raise ValueError("The news analysis must belong to the decision run")
+            cursor = connection.execute(
+                """
+                INSERT INTO alert_decisions (
+                    run_id,
+                    news_analysis_id,
+                    stage,
+                    pair,
+                    direction,
+                    timeframe,
+                    alert_level,
+                    score,
+                    payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    news_analysis_id,
+                    stage.value,
+                    pair,
+                    direction,
+                    timeframe,
+                    alert_level,
+                    score,
+                    _json(payload),
+                ),
+            )
+        return cursor.lastrowid
+
+    def record_score_adjustment(
+        self,
+        run_id: int,
+        *,
+        technical_decision_id: int,
+        final_decision_id: int,
+        news_analysis_id: int,
+        technical_score: int,
+        score_delta: int,
+        final_score: int,
+        reasons: tuple[str, ...],
+    ) -> int:
+        """Record the deterministic news adjustment between two decisions."""
+        with self._connect() as connection:
+            technical_record = connection.execute(
+                "SELECT run_id, stage, score FROM alert_decisions WHERE id = ?",
+                (technical_decision_id,),
+            ).fetchone()
+            final_record = connection.execute(
+                "SELECT run_id, stage, score, news_analysis_id FROM alert_decisions WHERE id = ?",
+                (final_decision_id,),
+            ).fetchone()
+            news_run = connection.execute(
+                "SELECT run_id FROM news_analyses WHERE id = ?", (news_analysis_id,)
+            ).fetchone()
+            if (
+                technical_record != (run_id, DecisionStage.TECHNICAL.value, technical_score)
+                or final_record
+                != (run_id, DecisionStage.FINAL.value, final_score, news_analysis_id)
+                or news_run != (run_id,)
+                or score_delta != final_score - technical_score
+            ):
+                raise ValueError("Adjustment links must belong to the same run")
+            cursor = connection.execute(
+                """
+                INSERT INTO score_adjustments (
+                    run_id,
+                    technical_decision_id,
+                    final_decision_id,
+                    news_analysis_id,
+                    technical_score,
+                    score_delta,
+                    final_score,
+                    reasons_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    technical_decision_id,
+                    final_decision_id,
+                    news_analysis_id,
+                    technical_score,
+                    score_delta,
+                    final_score,
+                    _json(reasons),
+                ),
+            )
+        return cursor.lastrowid
+
+    def record_alert_delivery_skip(
+        self,
+        run_id: int,
+        *,
+        alert_decision_id: int,
+        skip_type: DeliverySkipType | str,
+        reason: str,
+        fingerprint: str | None,
+        message: str | None = None,
+        skipped_at: datetime | None = None,
+    ) -> int:
+        """Record why a qualifying decision was not delivered."""
+        skip_type = DeliverySkipType(skip_type)
+        with self._connect() as connection:
+            decision_run = connection.execute(
+                "SELECT run_id FROM alert_decisions WHERE id = ?", (alert_decision_id,)
+            ).fetchone()
+            if decision_run != (run_id,):
+                raise ValueError("The alert decision must belong to the delivery run")
+            cursor = connection.execute(
+                """
+                INSERT INTO alert_delivery_skips (
+                    run_id,
+                    alert_decision_id,
+                    skip_type,
+                    reason,
+                    fingerprint,
+                    message,
+                    skipped_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    alert_decision_id,
+                    skip_type.value,
+                    reason,
+                    fingerprint,
+                    message,
+                    _timestamp(skipped_at),
+                ),
+            )
+        return cursor.lastrowid
+
+    def get_decision_flow(self, run_id: int) -> dict[str, list[dict[str, object]]]:
+        """Return decisions, adjustments, and delivery skips for one run."""
+        with self._connect() as connection:
+            candidates = connection.execute(
+                """
+                SELECT id, strategy, pair, direction, timeframe, payload_json
+                FROM candidate_signals
+                WHERE run_id = ?
+                ORDER BY id
+                """,
+                (run_id,),
+            ).fetchall()
+            news_analyses = connection.execute(
+                """
+                SELECT id, candidate_signal_id, input_json, output_json, status
+                FROM news_analyses
+                WHERE run_id = ?
+                ORDER BY id
+                """,
+                (run_id,),
+            ).fetchall()
+            decisions = connection.execute(
+                """
+                SELECT
+                    id, news_analysis_id, stage, pair, direction, timeframe,
+                    alert_level, score, payload_json
+                FROM alert_decisions
+                WHERE run_id = ?
+                ORDER BY id
+                """,
+                (run_id,),
+            ).fetchall()
+            adjustments = connection.execute(
+                """
+                SELECT
+                    technical_decision_id, final_decision_id, news_analysis_id,
+                    technical_score, score_delta, final_score, reasons_json
+                FROM score_adjustments
+                WHERE run_id = ?
+                ORDER BY id
+                """,
+                (run_id,),
+            ).fetchall()
+            delivery_skips = connection.execute(
+                """
+                SELECT alert_decision_id, skip_type, reason, fingerprint, message, skipped_at
+                FROM alert_delivery_skips
+                WHERE run_id = ?
+                ORDER BY id
+                """,
+                (run_id,),
+            ).fetchall()
+        return {
+            "candidates": [
+                {
+                    "id": row[0],
+                    "strategy": row[1],
+                    "pair": row[2],
+                    "direction": row[3],
+                    "timeframe": row[4],
+                    "payload": json.loads(row[5]),
+                }
+                for row in candidates
+            ],
+            "news_analyses": [
+                {
+                    "id": row[0],
+                    "candidate_signal_id": row[1],
+                    "input": json.loads(row[2]),
+                    "output": json.loads(row[3]) if row[3] is not None else None,
+                    "status": row[4],
+                }
+                for row in news_analyses
+            ],
+            "decisions": [
+                {
+                    "id": row[0],
+                    "news_analysis_id": row[1],
+                    "stage": row[2],
+                    "pair": row[3],
+                    "direction": row[4],
+                    "timeframe": row[5],
+                    "alert_level": row[6],
+                    "score": row[7],
+                    "payload": json.loads(row[8]),
+                }
+                for row in decisions
+            ],
+            "adjustments": [
+                {
+                    "technical_decision_id": row[0],
+                    "final_decision_id": row[1],
+                    "news_analysis_id": row[2],
+                    "technical_score": row[3],
+                    "score_delta": row[4],
+                    "final_score": row[5],
+                    "reasons": json.loads(row[6]),
+                }
+                for row in adjustments
+            ],
+            "delivery_skips": [
+                {
+                    "alert_decision_id": row[0],
+                    "skip_type": row[1],
+                    "reason": row[2],
+                    "fingerprint": row[3],
+                    "message": row[4],
+                    "skipped_at": row[5],
+                }
+                for row in delivery_skips
+            ],
+        }
+
     def record_alert(
         self,
         run_id: int,
@@ -252,6 +588,7 @@ class SQLiteLog:
         news_analysis_id: int,
         message: str,
         fingerprint: str,
+        alert_decision_id: int | None = None,
         sent_at: datetime | None = None,
     ) -> int:
         """Record one sent alert with its candidate and news-analysis links."""
@@ -270,16 +607,40 @@ class SQLiteLog:
             ).fetchone()
             if provenance != (run_id, run_id, candidate_signal_id):
                 raise ValueError("Alert links must belong to the same run and candidate signal")
+            if alert_decision_id is not None:
+                decision_provenance = connection.execute(
+                    """
+                    SELECT run_id, news_analysis_id, stage
+                    FROM alert_decisions
+                    WHERE id = ?
+                    """,
+                    (alert_decision_id,),
+                ).fetchone()
+                if decision_provenance != (
+                    run_id,
+                    news_analysis_id,
+                    DecisionStage.FINAL.value,
+                ):
+                    raise ValueError("Alert decision must be final and belong to the same run")
             cursor = connection.execute(
                 """
                 INSERT INTO alerts
-                    (run_id, candidate_signal_id, news_analysis_id, fingerprint, message, sent_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (
+                        run_id,
+                        candidate_signal_id,
+                        news_analysis_id,
+                        alert_decision_id,
+                        fingerprint,
+                        message,
+                        sent_at
+                    )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
                     candidate_signal_id,
                     news_analysis_id,
+                    alert_decision_id,
                     fingerprint,
                     message,
                     _timestamp(sent_at),
@@ -403,6 +764,7 @@ class SQLiteLog:
                     news_analyses.input_json,
                     news_analyses.output_json,
                     news_analyses.status,
+                    alerts.alert_decision_id,
                     alerts.fingerprint,
                     alerts.message
                 FROM alerts
@@ -412,9 +774,28 @@ class SQLiteLog:
                 """,
                 (alert_id,),
             ).fetchone()
+            decision_row = None
+            adjustment_row = None
+            if row is not None and row[11] is not None:
+                decision_row = connection.execute(
+                    """
+                    SELECT stage, pair, direction, timeframe, alert_level, score, payload_json
+                    FROM alert_decisions
+                    WHERE id = ?
+                    """,
+                    (row[11],),
+                ).fetchone()
+                adjustment_row = connection.execute(
+                    """
+                    SELECT technical_score, score_delta, final_score, reasons_json
+                    FROM score_adjustments
+                    WHERE final_decision_id = ?
+                    """,
+                    (row[11],),
+                ).fetchone()
         if row is None:
             raise ValueError(f"No alert exists with id {alert_id}")
-        return {
+        trace: dict[str, object] = {
             "run_id": row[0],
             "candidate": {
                 "id": row[1],
@@ -430,9 +811,28 @@ class SQLiteLog:
                 "output": json.loads(row[9]) if row[9] is not None else None,
                 "status": row[10],
             },
-            "fingerprint": row[11],
-            "message": row[12],
+            "fingerprint": row[12],
+            "message": row[13],
         }
+        if decision_row is not None:
+            trace["alert_decision"] = {
+                "id": row[11],
+                "stage": decision_row[0],
+                "pair": decision_row[1],
+                "direction": decision_row[2],
+                "timeframe": decision_row[3],
+                "alert_level": decision_row[4],
+                "score": decision_row[5],
+                "payload": json.loads(decision_row[6]),
+            }
+        if adjustment_row is not None:
+            trace["score_adjustment"] = {
+                "technical_score": adjustment_row[0],
+                "score_delta": adjustment_row[1],
+                "final_score": adjustment_row[2],
+                "reasons": json.loads(adjustment_row[3]),
+            }
+        return trace
 
 
 def _timestamp(value: datetime | None = None) -> str:

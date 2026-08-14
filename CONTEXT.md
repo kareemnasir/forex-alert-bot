@@ -21,8 +21,8 @@ its source and compare it for cooldown or deduplication.
 _Avoid_: Cooldown decision, alert history
 
 **Alert Decision**:
-The scorer's final assessment for one pair and timeframe, including a direction when
-one side wins and an explicit alert level that may be No Alert.
+A deterministic assessment for one pair and timeframe, including a direction when one
+side wins and an explicit alert level that may be No Alert.
 _Avoid_: Alert, trade recommendation
 
 **Alert Level**:
@@ -39,6 +39,11 @@ _Avoid_: Stop-loss order, trade exit
 The captured news input and sentiment output evaluated for a candidate signal during a
 run.
 _Avoid_: News signal, recommendation
+
+**Score Adjustment**:
+An inspectable deterministic change to an existing Alert Decision based on News
+Analysis; it cannot create a pair, direction, or Candidate Signal.
+_Avoid_: News signal, LLM decision
 
 **Alert**:
 A message that was sent to the user and is linked to its candidate signal and news
