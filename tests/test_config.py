@@ -19,6 +19,12 @@ def test_settings_use_safe_defaults() -> None:
     assert settings.news_api_key is None
     assert settings.news_max_age_hours == 24
     assert settings.news_max_items == 10
+    assert settings.ollama_api_key is None
+    assert settings.ollama_host == "https://ollama.com"
+    assert settings.ollama_model is None
+    assert settings.ollama_timeout_seconds == 30.0
+    assert settings.ollama_max_headlines == 10
+    assert settings.ollama_retry_count == 1
     assert settings.alert_cooldown_minutes == 120
     assert settings.log_level == "INFO"
 
@@ -77,6 +83,26 @@ def test_settings_read_news_environment_values() -> None:
     assert settings.news_max_items == 12
 
 
+def test_settings_read_ollama_environment_values() -> None:
+    settings = Settings.from_environment(
+        {
+            "OLLAMA_API_KEY": "ollama-cloud-token",
+            "OLLAMA_HOST": "https://ollama.example",
+            "OLLAMA_MODEL": "glm-5.2-cloud",
+            "OLLAMA_TIMEOUT_SECONDS": "12.5",
+            "OLLAMA_MAX_HEADLINES": "6",
+            "OLLAMA_RETRY_COUNT": "1",
+        }
+    )
+
+    assert settings.ollama_api_key == "ollama-cloud-token"
+    assert settings.ollama_host == "https://ollama.example"
+    assert settings.ollama_model == "glm-5.2-cloud"
+    assert settings.ollama_timeout_seconds == 12.5
+    assert settings.ollama_max_headlines == 6
+    assert settings.ollama_retry_count == 1
+
+
 def test_settings_reject_invalid_boolean_values() -> None:
     with pytest.raises(ValueError, match="DRY_RUN"):
         Settings.from_environment({"DRY_RUN": "sometimes"})
@@ -113,6 +139,10 @@ def test_settings_reject_invalid_alert_windows(environment: dict[str, str], vari
         ({"NEWS_PROVIDER": "other"}, "NEWS_PROVIDER"),
         ({"NEWS_MAX_AGE_HOURS": "0"}, "NEWS_MAX_AGE_HOURS"),
         ({"NEWS_MAX_ITEMS": "many"}, "NEWS_MAX_ITEMS"),
+        ({"OLLAMA_TIMEOUT_SECONDS": "nan"}, "OLLAMA_TIMEOUT_SECONDS"),
+        ({"OLLAMA_MAX_HEADLINES": "0"}, "OLLAMA_MAX_HEADLINES"),
+        ({"OLLAMA_RETRY_COUNT": "-1"}, "OLLAMA_RETRY_COUNT"),
+        ({"OLLAMA_RETRY_COUNT": "2"}, "OLLAMA_RETRY_COUNT"),
     ],
 )
 def test_settings_reject_invalid_provider_configuration(

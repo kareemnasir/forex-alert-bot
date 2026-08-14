@@ -103,8 +103,21 @@ returned item cap. Each scheduled run makes one bounded request for all configur
 results to UTC with source, URL/snippet, and pair/currency metadata.
 
 Missing credentials, empty results, provider errors, and malformed articles do not stop
-the scheduler. Recoverable provider failures are recorded as `news` errors. This fetcher
-does not call Ollama or perform sentiment analysis; that remains a separate issue.
+the scheduler. Recoverable provider failures are recorded as `news` errors.
+
+## Ollama Cloud sentiment
+
+Set `OLLAMA_API_KEY` and `OLLAMA_MODEL` to analyze normalized news through Ollama Cloud.
+`OLLAMA_HOST` defaults to `https://ollama.com`; timeout, headline cap, and retry budget are
+configurable with `OLLAMA_TIMEOUT_SECONDS`, `OLLAMA_MAX_HEADLINES`, and
+`OLLAMA_RETRY_COUNT`. Leave the model configurable because the models available to an
+Ollama Pro account can change.
+
+The sentiment service sends only articles relevant to the requested pairs, asks for JSON,
+then validates the model content locally. Invalid responses and provider failures retry
+within the configured budget and produce an inspectable unavailable result rather than an
+exception. The service returns news-impact objects only; it does not create candidate
+signals, adjust technical scores, or send Telegram alerts.
 
 ## Telegram test
 

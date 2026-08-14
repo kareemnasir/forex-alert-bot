@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import re
 from collections.abc import Mapping
@@ -24,6 +25,10 @@ DEFAULT_MARKET_DATA_TIMEFRAMES = ("15min", "1h")
 DEFAULT_NEWS_PROVIDER = "marketaux"
 DEFAULT_NEWS_MAX_AGE_HOURS = 24
 DEFAULT_NEWS_MAX_ITEMS = 10
+DEFAULT_OLLAMA_HOST = "https://ollama.com"
+DEFAULT_OLLAMA_TIMEOUT_SECONDS = 30.0
+DEFAULT_OLLAMA_MAX_HEADLINES = 10
+DEFAULT_OLLAMA_RETRY_COUNT = 1
 DEFAULT_ALERT_COOLDOWN_MINUTES = 120
 DEFAULT_LOG_LEVEL = "INFO"
 _FOREX_PAIR_PATTERN = re.compile(r"^[A-Z]{3}/[A-Z]{3}$")
@@ -60,6 +65,12 @@ class Settings:
     news_api_key: str | None = None
     news_max_age_hours: int = DEFAULT_NEWS_MAX_AGE_HOURS
     news_max_items: int = DEFAULT_NEWS_MAX_ITEMS
+    ollama_api_key: str | None = None
+    ollama_host: str = DEFAULT_OLLAMA_HOST
+    ollama_model: str | None = None
+    ollama_timeout_seconds: float = DEFAULT_OLLAMA_TIMEOUT_SECONDS
+    ollama_max_headlines: int = DEFAULT_OLLAMA_MAX_HEADLINES
+    ollama_retry_count: int = DEFAULT_OLLAMA_RETRY_COUNT
     alert_cooldown_minutes: int = DEFAULT_ALERT_COOLDOWN_MINUTES
     log_level: str = DEFAULT_LOG_LEVEL
     telegram_bot_token: str | None = None
@@ -119,8 +130,23 @@ class Settings:
                 "NEWS_MAX_ITEMS",
                 environment.get("NEWS_MAX_ITEMS", str(DEFAULT_NEWS_MAX_ITEMS)),
             ),
-            alert_cooldown_minutes=_parse_alert_cooldown_minutes(
-                environment.get("ALERT_COOLDOWN_MINUTES", str(DEFAULT_ALERT_COOLDOWN_MINUTES))
+            ollama_api_key=environment.get("OLLAMA_API_KEY"),
+            ollama_host=environment.get("OLLAMA_HOST", DEFAULT_OLLAMA_HOST).rstrip("/"),
+            ollama_model=environment.get("OLLAMA_MODEL") or None,
+            ollama_timeout_seconds=_parse_positive_float(
+                "OLLAMA_TIMEOUT_SECONDS",
+                environment.get("OLLAMA_TIMEOUT_SECONDS", str(DEFAULT_OLLAMA_TIMEOUT_SECONDS)),
+            ),
+            ollama_max_headlines=_parse_positive_integer(
+                "OLLAMA_MAX_HEADLINES",
+                environment.get("OLLAMA_MAX_HEADLINES", str(DEFAULT_OLLAMA_MAX_HEADLINES)),
+            ),
+            ollama_retry_count=_parse_ollama_retry_count(
+                environment.get("OLLAMA_RETRY_COUNT", str(DEFAULT_OLLAMA_RETRY_COUNT))
+            ),
+            alert_cooldown_minutes=_parse_nonnegative_integer(
+                "ALERT_COOLDOWN_MINUTES",
+                environment.get("ALERT_COOLDOWN_MINUTES", str(DEFAULT_ALERT_COOLDOWN_MINUTES)),
             ),
             log_level=environment.get("LOG_LEVEL", DEFAULT_LOG_LEVEL).upper(),
             telegram_bot_token=environment.get("TELEGRAM_BOT_TOKEN"),
@@ -168,16 +194,6 @@ def _parse_timeframes(value: str) -> tuple[str, ...]:
     return timeframes
 
 
-def _parse_alert_cooldown_minutes(value: str) -> int:
-    try:
-        minutes = int(value)
-    except ValueError as error:
-        raise ValueError("ALERT_COOLDOWN_MINUTES must be a nonnegative integer") from error
-    if minutes < 0:
-        raise ValueError("ALERT_COOLDOWN_MINUTES must be a nonnegative integer")
-    return minutes
-
-
 def _parse_positive_integer(variable: str, value: str) -> int:
     try:
         parsed = int(value)
@@ -185,4 +201,31 @@ def _parse_positive_integer(variable: str, value: str) -> int:
         raise ValueError(f"{variable} must be a positive integer") from error
     if parsed <= 0:
         raise ValueError(f"{variable} must be a positive integer")
+    return parsed
+
+
+def _parse_nonnegative_integer(variable: str, value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise ValueError(f"{variable} must be a nonnegative integer") from error
+    if parsed < 0:
+        raise ValueError(f"{variable} must be a nonnegative integer")
+    return parsed
+
+
+def _parse_ollama_retry_count(value: str) -> int:
+    parsed = _parse_nonnegative_integer("OLLAMA_RETRY_COUNT", value)
+    if parsed > 1:
+        raise ValueError("OLLAMA_RETRY_COUNT must be 0 or 1")
+    return parsed
+
+
+def _parse_positive_float(variable: str, value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as error:
+        raise ValueError(f"{variable} must be a positive number") from error
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise ValueError(f"{variable} must be a positive number")
     return parsed
