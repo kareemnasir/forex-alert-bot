@@ -226,9 +226,11 @@ Use Ollama Cloud from the VPS.
 
 ```env
 OLLAMA_API_KEY=...
-LLM_PROVIDER=ollama
-LLM_HOST=https://ollama.com
-LLM_MODEL=...
+OLLAMA_HOST=https://ollama.com
+OLLAMA_MODEL=...
+OLLAMA_TIMEOUT_SECONDS=30
+OLLAMA_MAX_HEADLINES=10
+OLLAMA_RETRY_COUNT=1
 ```
 
 The app calls Ollama Cloud over HTTPS. The model runs remotely on Ollama infrastructure, not on the VPS.
