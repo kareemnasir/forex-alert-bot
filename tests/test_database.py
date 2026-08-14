@@ -60,6 +60,7 @@ def test_existing_alert_table_is_migrated_for_fingerprints(tmp_path) -> None:
         indexes = {row[1] for row in connection.execute("PRAGMA index_list(alerts)")}
 
     assert "fingerprint" in columns
+    assert "alert_decision_id" in columns
     assert "alerts_by_fingerprint_sent_at" in indexes
 
 
@@ -249,3 +250,87 @@ def test_cross_run_provenance_links_are_rejected(tmp_path) -> None:
             fingerprint="v1:first-run",
             message="EUR/USD SELL Watch",
         )
+
+
+def test_complete_decision_flow_is_inspectable_for_dry_run(tmp_path) -> None:
+    database = SQLiteLog(tmp_path / "forex-alert-bot.sqlite3")
+    run_id = database.start_run(dry_run=True)
+    candidate_id = database.record_candidate_signal(
+        run_id,
+        strategy="breakout",
+        pair="EUR/USD",
+        direction="BUY",
+        timeframe="15min",
+        payload={"score": 68},
+    )
+    technical_decision_id = database.record_alert_decision(
+        run_id,
+        stage="technical",
+        pair="EUR/USD",
+        direction="BUY",
+        timeframe="15min",
+        alert_level="Watch",
+        score=68,
+        news_analysis_id=None,
+        payload={"candidate_ids": [candidate_id]},
+    )
+    news_analysis_id = database.record_news_analysis(
+        run_id,
+        candidate_signal_id=candidate_id,
+        input_payload={"headlines": ["ECB policy remains supportive"]},
+        output_payload={"direction": "bullish", "strength": 0.6},
+    )
+    final_decision_id = database.record_alert_decision(
+        run_id,
+        stage="final",
+        pair="EUR/USD",
+        direction="BUY",
+        timeframe="15min",
+        alert_level="Watch",
+        score=74,
+        news_analysis_id=news_analysis_id,
+        payload={"candidate_ids": [candidate_id]},
+    )
+    database.record_score_adjustment(
+        run_id,
+        technical_decision_id=technical_decision_id,
+        final_decision_id=final_decision_id,
+        news_analysis_id=news_analysis_id,
+        technical_score=68,
+        score_delta=6,
+        final_score=74,
+        reasons=("News supports BUY; score increased by 6 points.",),
+    )
+    database.record_alert_delivery_skip(
+        run_id,
+        alert_decision_id=final_decision_id,
+        skip_type="dry_run",
+        reason="Dry run suppressed Telegram delivery.",
+        fingerprint="v1:dry-run",
+        skipped_at=RECORDED_AT,
+    )
+
+    flow = database.get_decision_flow(run_id)
+
+    assert [item["stage"] for item in flow["decisions"]] == ["technical", "final"]
+    assert flow["adjustments"] == [
+        {
+            "technical_decision_id": technical_decision_id,
+            "final_decision_id": final_decision_id,
+            "news_analysis_id": news_analysis_id,
+            "technical_score": 68,
+            "score_delta": 6,
+            "final_score": 74,
+            "reasons": ["News supports BUY; score increased by 6 points."],
+        }
+    ]
+    assert flow["delivery_skips"] == [
+        {
+            "alert_decision_id": final_decision_id,
+            "skip_type": "dry_run",
+            "reason": "Dry run suppressed Telegram delivery.",
+            "fingerprint": "v1:dry-run",
+            "message": None,
+            "skipped_at": RECORDED_AT.isoformat(),
+        }
+    ]

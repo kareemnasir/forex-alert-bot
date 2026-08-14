@@ -72,6 +72,24 @@ def test_notifier_sends_one_message_to_configured_chat() -> None:
     ]
 
 
+def test_notifier_sends_a_formatted_alert_message() -> None:
+    client = RecordingClient()
+    notifier = TelegramNotifier("test-token", "12345", client=client)
+
+    notifier.send_alert("EUR/USD BUY Watch\nManual decision only.")
+
+    assert client.calls == [
+        (
+            "https://api.telegram.org/bottest-token/sendMessage",
+            {
+                "chat_id": "12345",
+                "text": "EUR/USD BUY Watch\nManual decision only.",
+            },
+            10.0,
+        )
+    ]
+
+
 @pytest.mark.parametrize(
     ("bot_token", "chat_id", "missing_setting"),
     [(None, "12345", "TELEGRAM_BOT_TOKEN"), ("test-token", None, "TELEGRAM_CHAT_ID")],

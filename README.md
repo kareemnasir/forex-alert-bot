@@ -23,9 +23,10 @@ VPS Python app
   -> calculate technical indicators
   -> run strategy modules
   -> generate candidate signals
+  -> score technical agreement and conflict
   -> fetch recent news when a setup is present
   -> call Ollama Cloud for structured sentiment
-  -> score agreement, conflict, and news confirmation
+  -> apply deterministic news score adjustment
   -> dedupe/cooldown alerts
   -> send Telegram alert
   -> save logs to SQLite
@@ -53,7 +54,7 @@ precedence over values in `.env`.
 python -m forex_alert_bot --dry-run
 ```
 
-The scaffold logs that dry-run mode is active and does not perform any signal checks or send alerts.
+This one-shot command only reports the selected mode. Use `--schedule` to run signal checks.
 
 ## Scheduled runs
 
@@ -64,13 +65,14 @@ python -m forex_alert_bot --schedule
 ```
 
 It runs at :00 and :30 during the configured local alert window (7:00 AM through
-10:00 PM in `America/Detroit` by default). Set `DRY_RUN=true` to prevent real alerts;
-market-data fetches still run so the configured provider can be checked safely.
+10:00 PM in `America/Detroit` by default). Set `DRY_RUN=true` to run the complete
+pipeline and persist its decisions while preventing Telegram delivery.
 
 Each scheduled run is saved to SQLite. By default, the database is created at
 `data/forex-alert-bot.sqlite3`; set `DATABASE_PATH` to use another local path. The
-database keeps runs, candidate signals, news-analysis input/output, sent alerts, and
-errors so future alerts can be inspected back to their source data.
+database keeps runs, candidate signals, technical and final decisions, news-analysis
+input/output, score adjustments, delivery skips, sent alerts, and errors so every
+outcome can be inspected back to its source data.
 
 ## Alert cooldown
 
@@ -80,8 +82,8 @@ default is 120 minutes; set it to `0` to disable the cooldown.
 
 The cooldown service checks fingerprinted sent-alert history before delivery. A blocked
 duplicate is saved in the SQLite `alert_skips` table with the matching alert ID and reason,
-so skipped decisions remain inspectable. This policy layer does not send Telegram messages;
-a future delivery workflow can call it immediately before sending.
+so skipped decisions remain inspectable. Dry-run and delivery skips are saved separately
+with their formatted message and final decision link.
 
 ## Market data
 
@@ -91,6 +93,10 @@ values as needed. The defaults fetch `EUR/USD`, `GBP/USD`, and `USD/JPY` on `15m
 `1h` timeframes. Candles are normalized to UTC with timestamp, open, high, low, close,
 and an optional volume value.
 
+Set `TECHNICAL_STRATEGIES` to a comma-separated subset of `trend-pullback`, `breakout`,
+and `mean-reversion`. These deterministic Python strategies are the only components that
+can create candidate signals.
+
 Provider failures, rate limits, missing data, and malformed responses do not stop the
 scheduler. They are recorded as `market-data` errors in the SQLite run log.
 
@@ -98,9 +104,9 @@ scheduler. They are recorded as `market-data` errors in the SQLite run log.
 
 Marketaux is the first news provider. Set `NEWS_API_KEY` in `.env`, and configure
 `NEWS_MAX_AGE_HOURS` and `NEWS_MAX_ITEMS` to control the recent article window and
-returned item cap. Each scheduled run makes one bounded request for all configured
-`MARKET_DATA_PAIRS`, then filters stale or irrelevant articles and normalizes relevant
-results to UTC with source, URL/snippet, and pair/currency metadata.
+returned item cap. A scheduled run requests news only after technical candidates exist,
+and only for candidate pairs. It then filters stale or irrelevant articles and normalizes
+relevant results to UTC with source, URL/snippet, and pair/currency metadata.
 
 Missing credentials, empty results, provider errors, and malformed articles do not stop
 the scheduler. Recoverable provider failures are recorded as `news` errors.
@@ -113,11 +119,15 @@ configurable with `OLLAMA_TIMEOUT_SECONDS`, `OLLAMA_MAX_HEADLINES`, and
 `OLLAMA_RETRY_COUNT`. Leave the model configurable because the models available to an
 Ollama Pro account can change.
 
-The sentiment service sends only articles relevant to the requested pairs, asks for JSON,
-then validates the model content locally. Invalid responses and provider failures retry
-within the configured budget and produce an inspectable unavailable result rather than an
-exception. The service returns news-impact objects only; it does not create candidate
-signals, adjust technical scores, or send Telegram alerts.
+The sentiment service is called only when candidate-scoped news exists. It sends only
+articles relevant to the requested pairs, asks for JSON, then validates the model content
+locally. Invalid responses and provider failures retry within the configured budget and
+produce an inspectable unavailable result rather than an exception.
+
+Ollama returns news-impact objects only. A deterministic Python policy applies bounded
+support boosts, contradiction reductions or suppression, and high-risk reductions or
+suppression. News cannot create a candidate, direction, or alert from a technical
+`No Alert`, and final scores are clamped to 0-100.
 
 ## Telegram test
 

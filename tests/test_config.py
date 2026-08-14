@@ -15,6 +15,11 @@ def test_settings_use_safe_defaults() -> None:
     assert settings.market_data_api_key is None
     assert settings.market_data_pairs == ("EUR/USD", "GBP/USD", "USD/JPY")
     assert settings.market_data_timeframes == ("15min", "1h")
+    assert settings.technical_strategies == (
+        "trend-pullback",
+        "breakout",
+        "mean-reversion",
+    )
     assert settings.news_provider == "marketaux"
     assert settings.news_api_key is None
     assert settings.news_max_age_hours == 24
@@ -41,6 +46,7 @@ def test_settings_read_environment_values() -> None:
             "MARKET_DATA_API_KEY": "market-data-token",
             "MARKET_DATA_PAIRS": "EUR/USD, AUD/USD",
             "MARKET_DATA_TIMEFRAMES": "5min, 1h",
+            "TECHNICAL_STRATEGIES": "breakout, trend-pullback",
             "ALERT_COOLDOWN_MINUTES": "45",
             "TELEGRAM_BOT_TOKEN": "test-token",
             "TELEGRAM_CHAT_ID": "12345",
@@ -56,6 +62,7 @@ def test_settings_read_environment_values() -> None:
     assert settings.market_data_api_key == "market-data-token"
     assert settings.market_data_pairs == ("EUR/USD", "AUD/USD")
     assert settings.market_data_timeframes == ("5min", "1h")
+    assert settings.technical_strategies == ("breakout", "trend-pullback")
     assert settings.alert_cooldown_minutes == 45
     assert settings.telegram_bot_token == "test-token"
     assert settings.telegram_chat_id == "12345"
@@ -136,6 +143,7 @@ def test_settings_reject_invalid_alert_windows(environment: dict[str, str], vari
         ({"MARKET_DATA_PROVIDER": "other"}, "MARKET_DATA_PROVIDER"),
         ({"MARKET_DATA_PAIRS": "EURUSD"}, "MARKET_DATA_PAIRS"),
         ({"MARKET_DATA_TIMEFRAMES": "10min"}, "MARKET_DATA_TIMEFRAMES"),
+        ({"TECHNICAL_STRATEGIES": "news-sentiment"}, "TECHNICAL_STRATEGIES"),
         ({"NEWS_PROVIDER": "other"}, "NEWS_PROVIDER"),
         ({"NEWS_MAX_AGE_HOURS": "0"}, "NEWS_MAX_AGE_HOURS"),
         ({"NEWS_MAX_ITEMS": "many"}, "NEWS_MAX_ITEMS"),

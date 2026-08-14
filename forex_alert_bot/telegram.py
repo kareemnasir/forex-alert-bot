@@ -43,10 +43,19 @@ class TelegramNotifier:
 
     def send_test_message(self) -> None:
         """Send the single message used to verify Telegram configuration."""
+        self._send_message(TEST_MESSAGE)
+
+    def send_alert(self, message: str) -> None:
+        """Send one already-formatted alert message."""
+        if not message.strip():
+            raise TelegramNotifierError("Telegram alert message cannot be empty")
+        self._send_message(message)
+
+    def _send_message(self, message: str) -> None:
         try:
             response = self._client.post(
                 TELEGRAM_API_URL.format(bot_token=self._bot_token),
-                data={"chat_id": self._chat_id, "text": TEST_MESSAGE},
+                data={"chat_id": self._chat_id, "text": message},
                 timeout=10.0,
             )
             response.raise_for_status()

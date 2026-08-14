@@ -195,7 +195,7 @@ def _score_group(
     )
     contributing_strategies = tuple(sorted({item.strategy for item in supporting_candidates}))
     agreement_bonus = config.agreement_bonus * max(0, len(contributing_strategies) - 1)
-    level = _level_for_score(final_score, config)
+    level = level_for_score(final_score, config)
     reasons = [
         f"{item.strategy}: {reason}" for item in supporting_candidates for reason in item.reasons
     ]
@@ -250,7 +250,8 @@ def _technical_score(
     )
 
 
-def _level_for_score(score: int, config: SignalScorerConfig) -> AlertLevel:
+def level_for_score(score: int, config: SignalScorerConfig) -> AlertLevel:
+    """Map a deterministic score to its configured alert band."""
     if score >= config.strong_watch_threshold:
         return AlertLevel.STRONG_WATCH
     if score >= config.watch_threshold:

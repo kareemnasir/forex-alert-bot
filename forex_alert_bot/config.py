@@ -12,6 +12,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
+from forex_alert_bot.strategies import (
+    BREAKOUT_STRATEGY,
+    MEAN_REVERSION_STRATEGY,
+    TREND_PULLBACK_STRATEGY,
+)
+
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
 DEFAULT_DRY_RUN = True
@@ -22,6 +28,11 @@ DEFAULT_DATABASE_PATH = Path("data/forex-alert-bot.sqlite3")
 DEFAULT_MARKET_DATA_PROVIDER = "twelve_data"
 DEFAULT_MARKET_DATA_PAIRS = ("EUR/USD", "GBP/USD", "USD/JPY")
 DEFAULT_MARKET_DATA_TIMEFRAMES = ("15min", "1h")
+DEFAULT_TECHNICAL_STRATEGIES = (
+    TREND_PULLBACK_STRATEGY,
+    BREAKOUT_STRATEGY,
+    MEAN_REVERSION_STRATEGY,
+)
 DEFAULT_NEWS_PROVIDER = "marketaux"
 DEFAULT_NEWS_MAX_AGE_HOURS = 24
 DEFAULT_NEWS_MAX_ITEMS = 10
@@ -46,6 +57,7 @@ _SUPPORTED_TIMEFRAMES = {
     "1week",
     "1month",
 }
+_SUPPORTED_TECHNICAL_STRATEGIES = frozenset(DEFAULT_TECHNICAL_STRATEGIES)
 
 
 @dataclass(frozen=True)
@@ -61,6 +73,7 @@ class Settings:
     market_data_api_key: str | None = None
     market_data_pairs: tuple[str, ...] = DEFAULT_MARKET_DATA_PAIRS
     market_data_timeframes: tuple[str, ...] = DEFAULT_MARKET_DATA_TIMEFRAMES
+    technical_strategies: tuple[str, ...] = DEFAULT_TECHNICAL_STRATEGIES
     news_provider: str = DEFAULT_NEWS_PROVIDER
     news_api_key: str | None = None
     news_max_age_hours: int = DEFAULT_NEWS_MAX_AGE_HOURS
@@ -119,6 +132,12 @@ class Settings:
             ),
             market_data_timeframes=_parse_timeframes(
                 environment.get("MARKET_DATA_TIMEFRAMES", ",".join(DEFAULT_MARKET_DATA_TIMEFRAMES))
+            ),
+            technical_strategies=_parse_technical_strategies(
+                environment.get(
+                    "TECHNICAL_STRATEGIES",
+                    ",".join(DEFAULT_TECHNICAL_STRATEGIES),
+                )
             ),
             news_provider=news_provider,
             news_api_key=environment.get("NEWS_API_KEY"),
@@ -192,6 +211,19 @@ def _parse_timeframes(value: str) -> tuple[str, ...]:
     if not timeframes or any(timeframe not in _SUPPORTED_TIMEFRAMES for timeframe in timeframes):
         raise ValueError("MARKET_DATA_TIMEFRAMES contains an unsupported Twelve Data interval")
     return timeframes
+
+
+def _parse_technical_strategies(value: str) -> tuple[str, ...]:
+    strategies = tuple(
+        dict.fromkeys(item.strip().lower() for item in value.split(",") if item.strip())
+    )
+    if not strategies or any(
+        strategy not in _SUPPORTED_TECHNICAL_STRATEGIES for strategy in strategies
+    ):
+        raise ValueError(
+            "TECHNICAL_STRATEGIES must contain trend-pullback, breakout, or mean-reversion"
+        )
+    return strategies
 
 
 def _parse_positive_integer(variable: str, value: str) -> int:
