@@ -8,8 +8,8 @@ from forex_alert_bot.market_data import MarketDataRateLimitError
 from forex_alert_bot.scheduler import create_scheduler, run_signal_check
 
 
-def test_scheduler_uses_default_local_window_and_half_hour_cadence() -> None:
-    settings = Settings()
+def test_scheduler_uses_default_local_window_and_half_hour_cadence(tmp_path) -> None:
+    settings = Settings(database_path=tmp_path / "forex-alert-bot.sqlite3")
     scheduler = create_scheduler(settings)
 
     job = scheduler.get_job("signal-check")
@@ -40,9 +40,14 @@ def test_scheduler_uses_default_local_window_and_half_hour_cadence() -> None:
     ) == datetime(2026, 8, 7, 7, 0, tzinfo=timezone)
 
 
-def test_scheduler_uses_configured_timezone_and_window() -> None:
+def test_scheduler_uses_configured_timezone_and_window(tmp_path) -> None:
     scheduler = create_scheduler(
-        Settings(timezone="UTC", alert_window_start_hour=8, alert_window_end_hour=21)
+        Settings(
+            timezone="UTC",
+            alert_window_start_hour=8,
+            alert_window_end_hour=21,
+            database_path=tmp_path / "forex-alert-bot.sqlite3",
+        )
     )
 
     job = scheduler.get_job("signal-check")
@@ -61,12 +66,12 @@ def test_scheduler_uses_configured_timezone_and_window() -> None:
     ) == datetime(2026, 8, 7, 8, 0, tzinfo=timezone)
 
 
-def test_dry_run_callback_logs_that_no_alert_was_sent(caplog) -> None:
+def test_dry_run_callback_logs_that_no_alert_was_sent(caplog, tmp_path) -> None:
     caplog.set_level("INFO")
 
-    run_signal_check(Settings(dry_run=True))
+    run_signal_check(Settings(dry_run=True, database_path=tmp_path / "forex-alert-bot.sqlite3"))
 
-    assert "Scheduled signal check started." in caplog.text
+    assert "Signal check started." in caplog.text
     assert "Dry run: no real alert was sent." in caplog.text
 
 

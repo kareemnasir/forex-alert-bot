@@ -13,7 +13,12 @@ from forex_alert_bot.config import Settings
 from forex_alert_bot.database import SQLiteLog
 from forex_alert_bot.market_data import MarketDataProvider
 from forex_alert_bot.news import NewsProvider
-from forex_alert_bot.pipeline import AlertNotifier, SentimentAnalyzer, SignalPipeline
+from forex_alert_bot.pipeline import (
+    AlertNotifier,
+    PipelineRunResult,
+    SentimentAnalyzer,
+    SignalPipeline,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,13 +30,13 @@ def run_signal_check(
     news_provider: NewsProvider | None = None,
     sentiment_analyzer: SentimentAnalyzer | None = None,
     notifier: AlertNotifier | None = None,
-) -> None:
-    """Delegate one scheduled run to the end-to-end signal pipeline."""
+) -> PipelineRunResult:
+    """Delegate one Run to the end-to-end signal pipeline."""
     database = database or SQLiteLog(settings.database_path)
-    logger.info("Scheduled signal check started.")
+    logger.info("Signal check started.")
     if settings.dry_run:
         logger.info("Dry run: no real alert was sent.")
-    SignalPipeline(
+    return SignalPipeline(
         settings=settings,
         database=database,
         market_data_provider=market_data_provider,

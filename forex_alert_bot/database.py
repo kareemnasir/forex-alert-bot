@@ -177,7 +177,7 @@ class SQLiteLog:
             )
 
     def start_run(self, *, dry_run: bool) -> int:
-        """Create a scheduled-run record and return its identifier."""
+        """Create a Run record and return its identifier."""
         with self._connect() as connection:
             cursor = connection.execute(
                 "INSERT INTO runs (started_at, status, dry_run) VALUES (?, ?, ?)",

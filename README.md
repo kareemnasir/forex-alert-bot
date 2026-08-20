@@ -18,7 +18,7 @@ Build a scheduled Python service that:
 
 ```text
 VPS Python app
-  -> scheduler wakes every 30-60 minutes
+  -> scheduler or operator starts one signal check
   -> fetch forex candles
   -> calculate technical indicators
   -> run strategy modules
@@ -50,29 +50,87 @@ cp .env.example .env
 Configuration is read from `.env` and environment variables. Explicit environment variables take
 precedence over values in `.env`.
 
+## One-shot runs
+
+Execute exactly one complete signal check in dry-run mode, then exit:
+
 ```bash
-python -m forex_alert_bot --dry-run
+python -m forex_alert_bot --run-once --dry-run
 ```
 
-This one-shot command only reports the selected mode. Use `--schedule` to run signal checks.
+The command uses the same `SignalPipeline` path as scheduled execution. It persists the Run,
+Candidate Signals, News Analyses, technical and final Alert Decisions, Score Adjustments, skips,
+Alerts, and Error Records that occur. Operator output includes the Run ID, final status, and counts
+for candidates, technical decisions, final decisions, and sent alerts.
+
+Without the command-line override, one-shot execution honors the configured `DRY_RUN` value:
+
+```bash
+python -m forex_alert_bot --run-once
+```
+
+Keep `DRY_RUN=true` until live Telegram delivery has been intentionally enabled and verified.
 
 ## Scheduled runs
 
-Start the recurring signal-check service with:
+Start the recurring service with an explicit command-line safety override:
 
 ```bash
-python -m forex_alert_bot --schedule
+python -m forex_alert_bot --schedule --dry-run
 ```
 
 It runs at :00 and :30 during the configured local alert window (7:00 AM through
-10:00 PM in `America/Detroit` by default). Set `DRY_RUN=true` to run the complete
-pipeline and persist its decisions while preventing Telegram delivery.
+10:00 PM in `America/Detroit` by default). The equivalent configured dry-run service is:
+
+```bash
+DRY_RUN=true python -m forex_alert_bot --schedule
+```
+
+After dry-run evidence has been reviewed, live scheduled execution is explicit:
+
+```bash
+DRY_RUN=false python -m forex_alert_bot --schedule
+```
+
+`DRY_RUN=true` is persistent runtime configuration for both one-shot and scheduled execution.
+`--dry-run` is a one-way safety override: it forces dry-run mode even when configuration is live,
+but it can never force live delivery. The override is accepted only with `--run-once` or
+`--schedule`.
 
 Each scheduled run is saved to SQLite. By default, the database is created at
 `data/forex-alert-bot.sqlite3`; set `DATABASE_PATH` to use another local path. The
 database keeps runs, candidate signals, technical and final decisions, news-analysis
 input/output, score adjustments, delivery skips, sent alerts, and errors so every
 outcome can be inspected back to its source data.
+
+## Operator inspection
+
+Read the 10 most recent Runs without initializing, migrating, or otherwise changing SQLite:
+
+```bash
+python -m forex_alert_bot --inspect-recent
+```
+
+Inspect one Run and its Error Records, Candidate Signals, News Analyses, technical/final Alert
+Decisions, Score Adjustments, cooldown skips, delivery skips, and sent-Alert references:
+
+```bash
+python -m forex_alert_bot --inspect-run 42
+```
+
+Inspection omits complete provider/LLM payloads, fingerprints, and formatted message bodies. A
+missing database or unknown Run ID is reported clearly; an initialized database with no Runs
+prints `No recorded runs.`
+
+## Command and exit behavior
+
+- With no command, the app performs no signal check and exits successfully after explaining the
+  available commands.
+- `--telegram-test`, `--run-once`, `--schedule`, `--inspect-recent`, and `--inspect-run` are mutually
+  exclusive. Incompatible combinations and invalid `--dry-run` usage exit with status 2.
+- A successful one-shot or inspection command exits with status 0. A failed one-shot, missing
+  inspection database, unknown Run ID, or Telegram test failure exits with status 1.
+- `--schedule` is the long-running command and does not exit after one Run.
 
 ## Alert cooldown
 
@@ -148,3 +206,7 @@ python -m pytest
 ruff check .
 ruff format --check .
 ```
+
+Tests that initialize SQLite or execute the pipeline always use temporary database paths. The
+complete test suite guards `data/forex-alert-bot.sqlite3` and its sidecars against creation or
+modification.

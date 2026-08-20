@@ -1,4 +1,4 @@
-"""End-to-end orchestration for one scheduled Forex signal check."""
+"""End-to-end orchestration for one Forex signal check."""
 
 from __future__ import annotations
 
