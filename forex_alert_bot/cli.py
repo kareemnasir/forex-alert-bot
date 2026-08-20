@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import signal
 import sys
 from dataclasses import replace
 from typing import Sequence
@@ -108,7 +109,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments.schedule:
         scheduler = create_scheduler(settings)
         logger.info("Starting signal-check scheduler.")
-        scheduler.start()
+        previous_sigterm_handler = signal.getsignal(signal.SIGTERM)
+
+        def shutdown_scheduler(_signum, _frame) -> None:
+            logger.info("Stopping signal-check scheduler.")
+            if not scheduler.running:
+                raise SystemExit(0)
+            scheduler.shutdown(wait=True)
+
+        signal.signal(signal.SIGTERM, shutdown_scheduler)
+        try:
+            scheduler.start()
+        finally:
+            signal.signal(signal.SIGTERM, previous_sigterm_handler)
         return 0
 
     print(

@@ -25,18 +25,17 @@ Target schedule:
 - Run every 30 minutes to 1 hour.
 - Active alert window: around 7:00 AM to 10:00 PM local time.
 - Timezone: `America/Detroit`.
-- Forex-specific note: forex is roughly 24/5, so Sunday evening through Friday evening may make more sense than every calendar day.
+- V1 weekly policy: Sunday from 5:00 PM through the configured end hour, Monday through Thursday
+  for the configured window, Friday through 5:00 PM, and no Saturday runs.
+- Limitation: V1 approximates the normal Forex week and does not infer holidays, exceptional
+  closures, or broker-specific sessions without a market calendar.
 
-Example APScheduler shape:
+The canonical scheduler builds the weekday-aware triggers:
 
 ```python
-scheduler.add_job(
-    run_signal_check,
-    trigger="cron",
-    minute="0,30",
-    hour="7-22",
-    timezone="America/Detroit",
-)
+settings = load_settings()
+scheduler = create_scheduler(settings)
+scheduler.start()
 ```
 
 ## Architecture
@@ -218,7 +217,8 @@ Any high-impact news risk = warn or skip depending on config
 - SQLite for v1 storage
 - Telegram Bot API for alerts
 - Optional: email via SMTP or transactional email provider
-- Optional later: Docker + systemd service
+- `systemd` service for the current Ubuntu VPS deployment
+- Optional later: Docker packaging
 
 ## LLM Setup
 
@@ -340,7 +340,6 @@ Later:
 ## Open Questions
 
 - Which pairs should v1 monitor?
-- Should alerts run Monday-Friday only, or Sunday evening-Friday evening?
 - Which timeframe should lead for each strategy: 15m, 30m, 1h, or multiple?
 - Telegram only for v1, or email too?
 - Which market-data API has acceptable pricing/limits?

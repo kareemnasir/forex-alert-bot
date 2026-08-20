@@ -36,6 +36,7 @@ VPS Python app
 
 - [Project Context](docs/project-context.md)
 - [Issue Plan](docs/issue-plan.md)
+- [Ubuntu VPS Deployment](docs/vps-deployment.md)
 
 ## Local Development
 
@@ -80,22 +81,22 @@ python -m forex_alert_bot --schedule --dry-run
 ```
 
 It runs at :00 and :30 during the configured local alert window (7:00 AM through
-10:00 PM in `America/Detroit` by default). The equivalent configured dry-run service is:
+10:00 PM in `America/Detroit` by default), intersected with the V1 Forex week: Sunday from
+5:00 PM, Monday through Thursday for the full configured window, and Friday through 5:00 PM.
+Saturday is excluded. The equivalent configured dry-run service is:
 
 ```bash
 DRY_RUN=true python -m forex_alert_bot --schedule
-```
-
-After dry-run evidence has been reviewed, live scheduled execution is explicit:
-
-```bash
-DRY_RUN=false python -m forex_alert_bot --schedule
 ```
 
 `DRY_RUN=true` is persistent runtime configuration for both one-shot and scheduled execution.
 `--dry-run` is a one-way safety override: it forces dry-run mode even when configuration is live,
 but it can never force live delivery. The override is accepted only with `--run-once` or
 `--schedule`.
+
+Do not set `DRY_RUN=false` yet. Live Telegram delivery remains disabled until the dry-run evidence
+review in issue #32 is complete. See the [Ubuntu VPS deployment guide](docs/vps-deployment.md) for
+the repository-controlled systemd unit, persistent paths, backup/restore, and update procedures.
 
 Each scheduled run is saved to SQLite. By default, the database is created at
 `data/forex-alert-bot.sqlite3`; set `DATABASE_PATH` to use another local path. The
