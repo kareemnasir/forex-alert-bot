@@ -6,8 +6,8 @@ alert can be understood after it was sent.
 ## Language
 
 **Run**:
-One scheduled attempt to evaluate the configured market conditions, with a completed or
-failed outcome.
+One scheduled or operator-triggered attempt to evaluate the configured market conditions, with a
+completed or failed outcome.
 _Avoid_: Job, execution
 
 **Candidate Signal**:

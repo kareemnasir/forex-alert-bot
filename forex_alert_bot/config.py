@@ -62,7 +62,7 @@ _SUPPORTED_TECHNICAL_STRATEGIES = frozenset(DEFAULT_TECHNICAL_STRATEGIES)
 
 @dataclass(frozen=True)
 class Settings:
-    """Runtime settings for the alert bot scaffold."""
+    """Runtime settings for the Forex alert bot."""
 
     dry_run: bool = DEFAULT_DRY_RUN
     timezone: str = DEFAULT_TIMEZONE
