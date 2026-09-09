@@ -63,7 +63,7 @@ def test_systemd_unit_enforces_the_vps_runtime_contract() -> None:
 def test_vps_guide_covers_safe_installation_and_recovery_commands() -> None:
     guide = DEPLOYMENT_GUIDE.read_text(encoding="utf-8")
 
-    assert "Ubuntu 24.04 LTS" in guide
+    assert "Debian 13 on DigitalOcean" in guide
     assert "Do not set `DRY_RUN=false`" in guide
     assert "DRY_RUN=true" in guide
     for required_setting in (

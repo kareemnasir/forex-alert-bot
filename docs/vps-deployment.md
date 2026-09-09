@@ -1,7 +1,7 @@
-# Ubuntu VPS deployment
+# Debian 13 on DigitalOcean deployment
 
 This is the authoritative V1 runbook for installing the Forex Alert Bot as one Python service on
-Ubuntu 24.04 LTS. It assumes an operator with `sudo` access and an intended application revision
+Debian 13 on DigitalOcean. It assumes an operator with `sudo` access and an intended application revision
 identified by its full Git commit SHA.
 
 > **Safety gate:** Do not set `DRY_RUN=false`, remove the unit's `--dry-run` argument, or send a
@@ -13,7 +13,7 @@ DNS and HTTPS requests to the configured providers and Telegram.
 
 ## Supported host and layout
 
-Use Ubuntu 24.04 LTS with Python 3.12 or newer. The fixed V1 layout is:
+Use Debian 13 on DigitalOcean with Python 3.12 or newer. The fixed V1 layout is:
 
 | Concern | Path | Runtime owner |
 | --- | --- | --- |
@@ -34,7 +34,7 @@ sudo apt install --yes ca-certificates git python3 python3-venv sqlite3
 python3 --version
 ```
 
-Confirm the displayed Python version is at least 3.12.
+Debian 13 supplies Python 3.13. Confirm the displayed Python version is at least 3.12.
 
 ## 2. Create the service identity and directories
 
@@ -199,7 +199,7 @@ sudo systemctl enable forex-alert-bot.service
 sudo systemctl start forex-alert-bot.service
 ```
 
-`systemd-analyze verify` must run on the Ubuntu target. Static repository tests on another operating
+`systemd-analyze verify` must run on the Debian 13 target on DigitalOcean. Static repository tests on another operating
 system do not prove that systemd loaded the unit.
 
 ## 7. Operate and observe the service

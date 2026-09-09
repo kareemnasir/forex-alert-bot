@@ -4,13 +4,13 @@ Date: August 6, 2026
 
 ## Summary
 
-Build a hobby Forex alerting tool. The software does not connect to a broker account and does not execute trades. It runs on a VPS, checks market/news conditions on a schedule, and sends Telegram or email alerts such as `BUY Watch`, `SELL Watch`, `Exit Watch`, or `No Trade`.
+Build a hobby Forex alerting tool. The software does not connect to a broker account and does not execute trades. It runs on Debian 13 on DigitalOcean, checks market/news conditions on a schedule, and sends Telegram or email alerts such as `BUY Watch`, `SELL Watch`, `Exit Watch`, or `No Trade`.
 
 The system should be inspectable and logged. Python rules make the trading decision. The LLM only analyzes recent news sentiment.
 
 ## Current Direction
 
-- Run the app on a cheap CPU VPS.
+- Run the app on Debian 13 on DigitalOcean.
 - Use the same VPS for the scheduler, data fetching, strategy logic, logging, and Telegram/email alerts.
 - Do not run the LLM locally on the VPS.
 - Use Ollama Cloud through the existing Ollama Pro plan for news sentiment.
@@ -41,7 +41,7 @@ scheduler.start()
 ## Architecture
 
 ```text
-VPS Python app
+Debian 13 on DigitalOcean: Python app
   -> scheduler wakes every 30-60 minutes
   -> fetch forex candles
   -> calculate technical indicators
@@ -217,7 +217,7 @@ Any high-impact news risk = warn or skip depending on config
 - SQLite for v1 storage
 - Telegram Bot API for alerts
 - Optional: email via SMTP or transactional email provider
-- `systemd` service for the current Ubuntu VPS deployment
+- `systemd` service for the current Debian 13 on DigitalOcean deployment
 - Optional later: Docker packaging
 
 ## LLM Setup

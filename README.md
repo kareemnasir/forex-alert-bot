@@ -1,6 +1,6 @@
 # Forex Alert Bot
 
-A hobby Forex alerting bot that runs on a VPS, checks technical setups, analyzes recent news sentiment with an LLM API, and sends Telegram alerts. It does not connect to broker accounts and does not execute trades.
+A hobby Forex alerting bot that runs on Debian 13 on DigitalOcean, checks technical setups, analyzes recent news sentiment with an LLM API, and sends Telegram alerts. It does not connect to broker accounts and does not execute trades.
 
 ## V1 Goal
 
@@ -17,7 +17,7 @@ Build a scheduled Python service that:
 ## Architecture
 
 ```text
-VPS Python app
+Debian 13 on DigitalOcean: Python app
   -> scheduler or operator starts one signal check
   -> fetch forex candles
   -> calculate technical indicators
@@ -36,7 +36,7 @@ VPS Python app
 
 - [Project Context](docs/project-context.md)
 - [Issue Plan](docs/issue-plan.md)
-- [Ubuntu VPS Deployment](docs/vps-deployment.md)
+- [Debian 13 on DigitalOcean Deployment](docs/vps-deployment.md)
 
 ## Local Development
 
@@ -95,7 +95,7 @@ but it can never force live delivery. The override is accepted only with `--run-
 `--schedule`.
 
 Do not set `DRY_RUN=false` yet. Live Telegram delivery remains disabled until the dry-run evidence
-review in issue #32 is complete. See the [Ubuntu VPS deployment guide](docs/vps-deployment.md) for
+review in issue #32 is complete. See the [Debian 13 on DigitalOcean deployment guide](docs/vps-deployment.md) for
 the repository-controlled systemd unit, persistent paths, backup/restore, and update procedures.
 
 Each scheduled run is saved to SQLite. By default, the database is created at

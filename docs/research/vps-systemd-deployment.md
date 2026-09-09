@@ -5,19 +5,16 @@ affect issue #30; it is not the operator runbook.
 
 ## Supported platform and Python baseline
 
-Use Ubuntu 24.04 LTS (Noble) for V1. It remains under standard security maintenance through
-31 May 2029, and its default Python is 3.12, which matches this repository's Ruff target and the
-issue's Python 3.12-or-newer requirement. Ubuntu 26.04 is newer, but 24.04 is still supported and
-avoids changing the Python baseline during this deployment-only issue. ([Ubuntu 24.04 release
-notes](https://documentation.ubuntu.com/release-notes/24.04/), [Ubuntu Python availability
-table](https://documentation.ubuntu.com/ubuntu-for-developers/reference/availability/python/))
+Use Debian 13 on DigitalOcean for V1. Debian 13 (trixie) supplies Python 3.13,
+which meets the application's Python 3.12-or-newer requirement. The Ruff target remains the
+minimum supported Python version, not the deployment interpreter version.
+([Debian 13 release information](https://www.debian.org/releases/trixie/),
+[Debian python3-venv package](https://packages.debian.org/trixie/python3-venv))
 
-The minimal host packages are `python3`, `python3-venv`, `sqlite3`, and `git`. Noble's
-`python3-venv` package installs the venv module for its default Python 3.12, while Noble's `sqlite3`
-package supplies the command-line interface needed by the manual backup and restore procedure.
-([Ubuntu `python3-venv` package](https://packages.ubuntu.com/noble/python/python3-venv), [Ubuntu
-`sqlite3` package search](https://packages.ubuntu.com/search?keywords=sqlite3), [Ubuntu `git`
-package](https://packages.ubuntu.com/noble/git))
+The minimal host packages are `python3`, `python3-venv`, `sqlite3`, and `git`.
+Install them using the runbook's apt commands. The existing dependency locks were generated
+for the Python 3.12 baseline; installation and service validation on the Debian 13 host remain
+required deployment evidence.
 
 ## systemd unit decisions
 
@@ -189,5 +186,5 @@ persistent database by default. ([SQLite CLI backup and restore commands](https:
   #32.
 - Use a small, verified hardening set rather than syscall or network filters that could accidentally
   block DNS, HTTPS, Python extensions, or SQLite.
-- Validate the unit on the Ubuntu target with `systemd-analyze verify`; local static checks are not
+- Validate the unit on the Debian 13 target on DigitalOcean with `systemd-analyze verify`; local static checks are not
   evidence that systemd executed it on a VPS.

@@ -160,13 +160,13 @@ Acceptance criteria:
 - duplicate checks use recent alert history
 - skipped duplicates are logged
 
-### VPS deployment
+### Debian 13 on DigitalOcean deployment
 
-Document and implement VPS deployment using a systemd service.
+Document and implement deployment to Debian 13 on DigitalOcean using a systemd service.
 
 Acceptance criteria:
 
-- setup instructions for Ubuntu VPS
+- setup instructions for Debian 13 on DigitalOcean
 - service restarts on failure
 - logs are inspectable
 - `.env` is not committed
