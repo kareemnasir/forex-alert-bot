@@ -40,6 +40,67 @@ def test_scheduler_uses_default_local_window_and_half_hour_cadence(tmp_path) -> 
     ) == datetime(2026, 8, 7, 7, 0, tzinfo=timezone)
 
 
+def test_scheduler_limits_weekends_to_the_forex_session(tmp_path) -> None:
+    settings = Settings(database_path=tmp_path / "forex-alert-bot.sqlite3")
+    scheduler = create_scheduler(settings)
+    job = scheduler.get_job("signal-check")
+
+    assert job is not None
+    timezone = ZoneInfo("America/Detroit")
+    assert job.trigger.get_next_fire_time(
+        None, datetime(2026, 8, 7, 16, 59, tzinfo=timezone)
+    ) == datetime(2026, 8, 7, 17, 0, tzinfo=timezone)
+    assert job.trigger.get_next_fire_time(
+        None, datetime(2026, 8, 7, 17, 1, tzinfo=timezone)
+    ) == datetime(2026, 8, 9, 17, 0, tzinfo=timezone)
+    assert job.trigger.get_next_fire_time(
+        None, datetime(2026, 8, 8, 12, 0, tzinfo=timezone)
+    ) == datetime(2026, 8, 9, 17, 0, tzinfo=timezone)
+    assert job.trigger.get_next_fire_time(
+        None, datetime(2026, 8, 9, 16, 59, tzinfo=timezone)
+    ) == datetime(2026, 8, 9, 17, 0, tzinfo=timezone)
+    assert job.trigger.get_next_fire_time(
+        None, datetime(2026, 8, 9, 22, 1, tzinfo=timezone)
+    ) == datetime(2026, 8, 10, 7, 0, tzinfo=timezone)
+
+
+def test_scheduler_clamps_configured_windows_to_forex_session_boundaries(tmp_path) -> None:
+    timezone = ZoneInfo("America/Detroit")
+    cases = (
+        (
+            18,
+            22,
+            datetime(2026, 8, 7, 12, 0, tzinfo=timezone),
+            datetime(2026, 8, 9, 18, 0, tzinfo=timezone),
+        ),
+        (
+            7,
+            16,
+            datetime(2026, 8, 9, 12, 0, tzinfo=timezone),
+            datetime(2026, 8, 10, 7, 0, tzinfo=timezone),
+        ),
+        (
+            17,
+            22,
+            datetime(2026, 8, 7, 16, 59, tzinfo=timezone),
+            datetime(2026, 8, 7, 17, 0, tzinfo=timezone),
+        ),
+    )
+
+    for start_hour, end_hour, now, expected in cases:
+        scheduler = create_scheduler(
+            Settings(
+                alert_window_start_hour=start_hour,
+                alert_window_end_hour=end_hour,
+                database_path=tmp_path / f"forex-alert-bot-{start_hour}-{end_hour}.sqlite3",
+            )
+        )
+        job = scheduler.get_job("signal-check")
+
+        assert job is not None
+        assert job.trigger.get_next_fire_time(None, now) == expected
+
+
 def test_scheduler_uses_configured_timezone_and_window(tmp_path) -> None:
     scheduler = create_scheduler(
         Settings(

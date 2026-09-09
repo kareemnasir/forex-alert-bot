@@ -1,4 +1,5 @@
 import os
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -132,6 +133,86 @@ def test_schedule_dry_run_forwards_dry_run_settings_to_scheduler(monkeypatch) ->
 
     assert cli.main(["--schedule", "--dry-run"]) == 0
     assert created_with == [Settings(dry_run=True)]
+
+
+def test_schedule_sigterm_waits_for_the_running_check_before_exit(monkeypatch) -> None:
+    from forex_alert_bot import cli
+
+    settings = Settings()
+    handlers = {}
+    shutdown_requests: list[bool] = []
+    previous_handler = object()
+
+    class SchedulerStub:
+        running = True
+
+        def start(self) -> None:
+            handlers[signal.SIGTERM](signal.SIGTERM, None)
+
+        def shutdown(self, *, wait: bool) -> None:
+            shutdown_requests.append(wait)
+            self.running = False
+
+    def record_signal_handler(signum, handler):
+        handlers[signum] = handler
+
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    monkeypatch.setattr(cli, "create_scheduler", lambda _settings: SchedulerStub())
+    monkeypatch.setattr(cli.signal, "getsignal", lambda _signum: previous_handler)
+    monkeypatch.setattr(cli.signal, "signal", record_signal_handler)
+
+    assert cli.main(["--schedule"]) == 0
+    assert shutdown_requests == [True]
+    assert handlers[signal.SIGTERM] is previous_handler
+
+
+def test_schedule_sigterm_before_start_exits_and_restores_handler(monkeypatch) -> None:
+    from forex_alert_bot import cli
+
+    handlers = {}
+    previous_handler = object()
+
+    class SchedulerStub:
+        running = False
+
+        def start(self) -> None:
+            handlers[signal.SIGTERM](signal.SIGTERM, None)
+
+    monkeypatch.setattr(cli, "load_settings", Settings)
+    monkeypatch.setattr(cli, "create_scheduler", lambda _settings: SchedulerStub())
+    monkeypatch.setattr(cli.signal, "getsignal", lambda _signum: previous_handler)
+    monkeypatch.setattr(
+        cli.signal, "signal", lambda signum, handler: handlers.update({signum: handler})
+    )
+
+    with pytest.raises(SystemExit) as error:
+        cli.main(["--schedule"])
+
+    assert error.value.code == 0
+    assert handlers[signal.SIGTERM] is previous_handler
+
+
+def test_schedule_start_failure_restores_sigterm_handler(monkeypatch) -> None:
+    from forex_alert_bot import cli
+
+    handlers = {}
+    previous_handler = object()
+
+    class SchedulerStub:
+        def start(self) -> None:
+            raise RuntimeError("scheduler failed")
+
+    monkeypatch.setattr(cli, "load_settings", Settings)
+    monkeypatch.setattr(cli, "create_scheduler", lambda _settings: SchedulerStub())
+    monkeypatch.setattr(cli.signal, "getsignal", lambda _signum: previous_handler)
+    monkeypatch.setattr(
+        cli.signal, "signal", lambda signum, handler: handlers.update({signum: handler})
+    )
+
+    with pytest.raises(RuntimeError, match="scheduler failed"):
+        cli.main(["--schedule"])
+
+    assert handlers[signal.SIGTERM] is previous_handler
 
 
 def test_run_once_executes_complete_pipeline_once_without_starting_scheduler(

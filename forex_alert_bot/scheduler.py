@@ -22,6 +22,9 @@ from forex_alert_bot.pipeline import (
 
 logger = logging.getLogger(__name__)
 
+FOREX_WEEK_OPEN_HOUR = 17
+FOREX_WEEK_CLOSE_HOUR = 17
+
 
 def run_signal_check(
     settings: Settings,
@@ -51,22 +54,29 @@ def create_scheduler(settings: Settings) -> BlockingScheduler:
     timezone = ZoneInfo(settings.timezone)
     database = SQLiteLog(settings.database_path)
     scheduler = BlockingScheduler(timezone=timezone)
+    triggers = [
+        *_window_triggers(
+            day_of_week="mon-thu",
+            start_hour=settings.alert_window_start_hour,
+            end_hour=settings.alert_window_end_hour,
+            timezone=timezone,
+        ),
+        *_window_triggers(
+            day_of_week="fri",
+            start_hour=settings.alert_window_start_hour,
+            end_hour=min(settings.alert_window_end_hour, FOREX_WEEK_CLOSE_HOUR),
+            timezone=timezone,
+        ),
+        *_window_triggers(
+            day_of_week="sun",
+            start_hour=max(settings.alert_window_start_hour, FOREX_WEEK_OPEN_HOUR),
+            end_hour=settings.alert_window_end_hour,
+            timezone=timezone,
+        ),
+    ]
     scheduler.add_job(
         run_signal_check,
-        trigger=OrTrigger(
-            [
-                CronTrigger(
-                    minute="0,30",
-                    hour=f"{settings.alert_window_start_hour}-{settings.alert_window_end_hour - 1}",
-                    timezone=timezone,
-                ),
-                CronTrigger(
-                    minute="0",
-                    hour=str(settings.alert_window_end_hour),
-                    timezone=timezone,
-                ),
-            ]
-        ),
+        trigger=OrTrigger(triggers),
         args=[settings, database],
         id="signal-check",
         max_instances=1,
@@ -75,3 +85,33 @@ def create_scheduler(settings: Settings) -> BlockingScheduler:
         replace_existing=True,
     )
     return scheduler
+
+
+def _window_triggers(
+    *,
+    day_of_week: str,
+    start_hour: int,
+    end_hour: int,
+    timezone: ZoneInfo,
+) -> list[CronTrigger]:
+    if start_hour > end_hour:
+        return []
+    triggers = []
+    if start_hour < end_hour:
+        triggers.append(
+            CronTrigger(
+                day_of_week=day_of_week,
+                minute="0,30",
+                hour=f"{start_hour}-{end_hour - 1}",
+                timezone=timezone,
+            )
+        )
+    triggers.append(
+        CronTrigger(
+            day_of_week=day_of_week,
+            minute="0",
+            hour=str(end_hour),
+            timezone=timezone,
+        )
+    )
+    return triggers
