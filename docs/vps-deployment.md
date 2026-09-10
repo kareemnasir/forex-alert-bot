@@ -107,12 +107,16 @@ production `.env` inside `/opt/forex-alert-bot`, pass secrets on the command lin
 external file.
 
 ```bash
+(
+set -euo pipefail
+sudo test ! -e /etc/forex-alert-bot/forex-alert-bot.env
 sudo install -o root -g forex-alert-bot -m 0640 /dev/null \
   /etc/forex-alert-bot/forex-alert-bot.env
 sudoedit /etc/forex-alert-bot/forex-alert-bot.env
 sudo chown root:forex-alert-bot /etc/forex-alert-bot/forex-alert-bot.env
 sudo chmod 0640 /etc/forex-alert-bot/forex-alert-bot.env
 sudo ln -s /etc/forex-alert-bot/forex-alert-bot.env /opt/forex-alert-bot/.env
+)
 ```
 
 The following provider settings are required for a complete provider-backed Run. Replace every
@@ -145,6 +149,12 @@ sudo -u forex-alert-bot test -r /etc/forex-alert-bot/forex-alert-bot.env
 ```
 
 Expected metadata is `root forex-alert-bot 640`.
+
+The file-creation block is for a new installation only and refuses an existing file. If it exists,
+preserve it and edit it with `sudoedit`; installing `/dev/null` again would erase existing credentials.
+Use plain `KEY=value` assignments without variable interpolation or `export`, so systemd and
+python-dotenv read the same values. Keep the verified `OLLAMA_MODEL=gpt-oss:120b-cloud` unless a
+real provider check demonstrates that a change is needed.
 
 ## 5. Run one safe preflight Run
 
@@ -213,6 +223,17 @@ sudo journalctl -u forex-alert-bot.service --since today --no-pager
 sudo journalctl -u forex-alert-bot.service -f
 ```
 
+Confirm boot enablement with `sudo systemctl is-enabled forex-alert-bot.service`. Capture the
+installed definition with `sudo systemctl cat forex-alert-bot.service` (review any local drop-ins
+for secrets before sharing). Record `git -C /opt/forex-alert-bot rev-parse HEAD` as root and
+`sudo systemctl show forex-alert-bot.service -p ActiveState -p SubState -p NRestarts -p MainPID`.
+The unit permits five starts within 300 seconds, waits 30 seconds between failure restarts, and
+then leaves rapid persistent failures stopped until the operator fixes the cause and resets it.
+
+HTTPX request and HTTPCore transport logging are capped at WARNING even with `LOG_LEVEL=DEBUG`;
+request URLs and headers can contain credentials. Application scheduling and error diagnostics
+remain available. Do not enable those libraries' verbose loggers or share raw provider payloads.
+
 The application handles systemd's `SIGTERM` by waiting for an in-progress signal check to finish,
 bounded by the unit's 300-second stop timeout. That budget covers the current default sequential
 provider request ceiling (up to 120 seconds of market-data attempts, 10 seconds for news, and 60
@@ -225,14 +246,18 @@ the signal-check job to one concurrent instance.
 
 All fire times use `APP_TIMEZONE` and remain inside the configured alert window:
 
-- Sunday: 17:00 through the configured end hour.
+- Sunday: the later of 17:00 and the configured start hour through the configured end hour.
 - Monday through Thursday: the configured start hour through the configured end hour.
-- Friday: the configured start hour through 17:00.
+- Friday: the configured start hour through the earlier of 17:00 and the configured end hour.
 - Saturday: no Runs.
 
 The default remains `America/Detroit`, 07:00–22:00, at `:00` and `:30` with the final end-hour Run
 at `:00`. This approximates the normal Sunday-evening-to-Friday-evening Forex week. It does not
 model holidays, exceptional closures, or broker-specific sessions; V1 has no market calendar.
+If the configured daily window does not intersect Sunday's or Friday's range, that day has no
+Runs. The 17:00 boundary is in `APP_TIMEZONE`; use America/Detroit for the intended US market-week
+approximation. One-shot commands run immediately and bypass this schedule. There is no immediate
+scheduled Run on startup, and downtime does not create a backlog of historical Runs.
 
 ### Verify a scheduled Run
 
@@ -242,6 +267,12 @@ After a configured fire time has passed, do not infer success only from `active 
 2. Run `--inspect-recent` and identify a new Run created after service start.
 3. Run `--inspect-run <RUN_ID>` and require `completed`, `Dry run: yes`, and zero sent Alerts.
 4. Review every Error Record and delivery skip.
+
+Require zero persisted provider errors and evidence for all six configured pair/timeframe fetches,
+not merely a completed status. Preserve the configured pair/timeframe inventory with the revision
+and Run IDs; the current database does not persist successful candle-fetch receipts. The pipeline
+attempts each configured combination and records failed fetches. A No Alert outcome with zero
+candidates is valid: in that case news and sentiment are not called and no delivery skip is expected.
 
 These steps remain pending until they are performed on an explicitly authorized VPS. Repository
 verification is not live service evidence.
@@ -255,8 +286,9 @@ verification is not live service evidence.
 - News provider: inspect a `news` Error Record and an unavailable News Analysis.
 - Sentiment provider: inspect a `sentiment` Error Record and unavailable sentiment; confirm Ollama
   host, model, key, and provider status.
-- Telegram: initial dry-run must show a `dry_run` delivery skip, not a sent Alert. Telegram errors
-  are not expected because delivery is suppressed. Do not use `--telegram-test` during issue #30.
+- Telegram: a qualifying final decision must show a `dry_run` delivery skip, not a sent Alert.
+  Telegram errors are not expected because delivery is suppressed. Do not use `--telegram-test`
+  during issue #30.
 - Persistent startup failure: the unit stops retrying after its configured start-limit burst. Fix
   the cause, then run `sudo systemctl reset-failed forex-alert-bot.service` before starting again.
 
@@ -292,29 +324,22 @@ overwrite; V1 intentionally has no automated retention service.
 Restore only for loss, corruption, or a proven data-compatibility problem. An ordinary code rollback
 preserves the current database. Replace `<ABSOLUTE_BACKUP_PATH>` with a previously validated file.
 
-Validate the source before stopping anything:
+Run this entire block together: source validation must succeed before stopping anything. Stop
+any manually launched scheduler or one-shot too; systemd controls only its own process. A restore
+deliberately returns data to the backup time, so retain the current history as shown below.
 
 ```bash
-RESTORE_SOURCE=<ABSOLUTE_BACKUP_PATH>
 (
 set -euo pipefail
+RESTORE_SOURCE=<ABSOLUTE_BACKUP_PATH>
 sudo test -f "$RESTORE_SOURCE"
 sudo test -s "$RESTORE_SOURCE"
 test "$(sudo sqlite3 -readonly "$RESTORE_SOURCE" 'PRAGMA integrity_check;')" = "ok"
 test -z "$(sudo sqlite3 -readonly "$RESTORE_SOURCE" 'PRAGMA foreign_key_check;')"
 test "$(sudo sqlite3 -readonly "$RESTORE_SOURCE" \
   "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='runs';")" = "1"
-)
-```
-
-Then stop the service before `.restore`, preserve a logical snapshot and the exact old database/WAL
-state, build and validate a replacement in the data directory, and move it into place:
-
-```bash
-(
-set -euo pipefail
 sudo systemctl stop forex-alert-bot.service
-sudo systemctl is-active --quiet forex-alert-bot.service && exit 1 || true
+test "$(sudo systemctl show forex-alert-bot.service -p ActiveState --value)" = inactive
 
 DATABASE_PATH=/var/lib/forex-alert-bot/forex-alert-bot.sqlite3
 RESTORE_TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -323,31 +348,67 @@ RESTORED_DB="/var/lib/forex-alert-bot/.restore-${RESTORE_TIMESTAMP}.sqlite3"
 sudo test ! -e "$ROLLBACK_DIR"
 sudo test ! -e "$RESTORED_DB"
 sudo install -d -o root -g forex-alert-bot -m 0750 "$ROLLBACK_DIR"
-sudo sqlite3 "$DATABASE_PATH" ".backup '$ROLLBACK_DIR/pre-restore.sqlite3'"
+# Preserve existing files even when corrupt; a logical backup may then be impossible.
+sudo install -d -o root -g root -m 0700 "$ROLLBACK_DIR/raw"
+for suffix in '' -wal -shm; do
+  if sudo test -e "${DATABASE_PATH}${suffix}"; then
+    sudo cp -p "${DATABASE_PATH}${suffix}" "$ROLLBACK_DIR/raw/forex-alert-bot.sqlite3${suffix}"
+  fi
+done
 sudo sqlite3 "$RESTORED_DB" ".restore '$RESTORE_SOURCE'"
 test "$(sudo sqlite3 "$RESTORED_DB" 'PRAGMA integrity_check;')" = "ok"
 test -z "$(sudo sqlite3 "$RESTORED_DB" 'PRAGMA foreign_key_check;')"
-sudo install -d -o root -g root -m 0700 "$ROLLBACK_DIR/raw"
-sudo mv "$DATABASE_PATH" "$ROLLBACK_DIR/raw/forex-alert-bot.sqlite3"
-if sudo test -e "${DATABASE_PATH}-wal"; then
-  sudo mv "${DATABASE_PATH}-wal" "$ROLLBACK_DIR/raw/forex-alert-bot.sqlite3-wal"
-fi
-if sudo test -e "${DATABASE_PATH}-shm"; then
-  sudo mv "${DATABASE_PATH}-shm" "$ROLLBACK_DIR/raw/forex-alert-bot.sqlite3-shm"
-fi
 sudo chown forex-alert-bot:forex-alert-bot "$RESTORED_DB"
 sudo chmod 0640 "$RESTORED_DB"
+sudo rm -f "${DATABASE_PATH}-wal" "${DATABASE_PATH}-shm"
 sudo mv "$RESTORED_DB" "$DATABASE_PATH"
-sudo chown root:forex-alert-bot "$ROLLBACK_DIR/pre-restore.sqlite3"
-sudo chmod 0640 "$ROLLBACK_DIR/pre-restore.sqlite3"
 sudo systemctl start forex-alert-bot.service
 sudo systemctl status forex-alert-bot.service --no-pager
 )
 ```
 
 Finally inspect journald, run `--inspect-recent`, and open a known Run with `--inspect-run`. If
-verification fails, stop the service and recover from the timestamped pre-restore snapshot or the
-raw main/WAL/SHM set kept together in `ROLLBACK_DIR`.
+verification fails, stop the service and recover the raw main/WAL/SHM set kept together in
+`ROLLBACK_DIR/raw`; remove the replacement's sidecars first, copy the saved set back, and apply
+`forex-alert-bot:forex-alert-bot` ownership and `0640` permissions before restarting. If the saved
+database was already corrupt, retain it for diagnosis and select another validated backup.
+
+### Non-destructive restore drill
+
+For deployment acceptance, restore a validated backup to an isolated directory without replacing
+production history. Use the backup path from section 8. This verifies SQLite recovery and CLI
+readability; it does not prove service ownership or systemd behavior until executed on the VPS.
+
+```bash
+(
+set -euo pipefail
+RESTORE_SOURCE=<ABSOLUTE_BACKUP_PATH>
+sudo test -s "$RESTORE_SOURCE"
+DRILL_DIR="$(sudo mktemp -d /var/lib/forex-alert-bot/restore-drill-XXXXXXXX)"
+sudo chown forex-alert-bot:forex-alert-bot "$DRILL_DIR"
+sudo chmod 0750 "$DRILL_DIR"
+DRILL_DB="$DRILL_DIR/restored.sqlite3"
+sudo sqlite3 "$DRILL_DB" ".restore '$RESTORE_SOURCE'"
+sudo chown forex-alert-bot:forex-alert-bot "$DRILL_DB"
+sudo chmod 0640 "$DRILL_DB"
+test "$(sudo -u forex-alert-bot sqlite3 -readonly "$DRILL_DB" 'PRAGMA integrity_check;')" = ok
+test -z "$(sudo -u forex-alert-bot sqlite3 -readonly "$DRILL_DB" 'PRAGMA foreign_key_check;')"
+test "$(sudo sqlite3 -readonly "$RESTORE_SOURCE" '.dump' | sha256sum)" = \
+  "$(sudo -u forex-alert-bot sqlite3 -readonly "$DRILL_DB" '.dump' | sha256sum)"
+sudo -u forex-alert-bot env DATABASE_PATH="$DRILL_DB" bash -c '
+  cd /opt/forex-alert-bot
+  exec .venv/bin/python -m forex_alert_bot --inspect-recent
+'
+printf 'Retained restore drill: %s\n' "$DRILL_DIR"
+)
+```
+
+Record the backup path, restored Run IDs, comparison result, and integrity checks. Retain the drill
+until acceptance is recorded. Use the same `DATABASE_PATH` override with `--inspect-run <RUN_ID>`
+to compare a known Run against the backup. Never point a scheduler or provider run at the drill.
+The `.restore` runs as root because a WAL-mode backup can require sidecar creation in the
+root-owned backup directory even when reading. The restored copy is owned and inspected by the
+service user in its writable drill directory.
 
 ## 10. Update the application
 
@@ -473,3 +534,34 @@ Issue #32 must review authorized VPS evidence before either control changes:
 
 Until that review is complete, repository installation can be complete while live VPS acceptance
 and issue closure remain pending.
+
+### Begin the #32 observation period
+
+1. Finish #30's VPS checks above and record host identity, deployed full SHA, installed unit,
+   Python version, config names/pair-timeframe inventory (no secret values), one-shot and scheduled
+   Run IDs, service enablement/status, and backup/restore results. Do not count local Run 79 as VPS
+   evidence or count a manual one-shot as a scheduled Run.
+2. Stop the service and confirm `ActiveState=inactive`; finish any manual one-shot. Make and
+   validate a timestamped section 8 backup of the deployment database. Preserve that archive and
+   the original database, then record the UTC observation boundary and `SELECT coalesce(max(id),0)
+   FROM runs;` result as `BASELINE_RUN_ID`. This is an explicitly archived baseline permitted by
+   #32; no history needs deletion. Run no automated tests against this runtime path.
+3. Keep `DRY_RUN=true` in the external file and the literal `--schedule --dry-run` ExecStart.
+   Start the service using `sudo systemctl start forex-alert-bot.service`; capture service start
+   time, status and `is-enabled`. Do not run additional manual one-shots in the observation window;
+   the schema has no scheduled/manual origin flag. If one is necessary, explicitly exclude its
+   Run ID in the observation report and correlate all counted Runs with journald trigger times.
+4. Observe for at least three trading days **and** at least 50 provider-successful scheduled Runs
+   after `BASELINE_RUN_ID`. Count only completed dry Runs with no persisted provider errors and
+   the unchanged six-combination inventory. Preserve per-day journald evidence and inspect recent
+   and individual Runs. Investigate failures separately; `completed` alone never earns credit.
+   Record timezone boundaries, missed trigger times and any restarts/configuration changes.
+5. Report all #32 categories: errors, candidates, technical/final decisions, news analyses, score
+   adjustments, cooldown/delivery skips and sent alerts (must remain zero). A natural No Alert is
+   valid. Independently tested Marketaux/Ollama components do not establish the real candidate →
+   news → adjusted decision → dry-run delivery-skip integration path. Keep that gap explicit until
+   it happens naturally. The review must conclude `remain in dry-run` or `ready for limited live
+   alerts`; neither starts live delivery without a separate reviewed authorization.
+
+See [the deployment verification record](issue-30-deployment-verification.md) for what has actually
+been verified and what remains blocked.
