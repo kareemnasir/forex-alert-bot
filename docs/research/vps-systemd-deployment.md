@@ -181,9 +181,9 @@ persistent database by default. ([SQLite CLI backup and restore commands](https:
 - Keep the exact layout proposed by the issue: source and venv in `/opt/forex-alert-bot`, external
   environment in `/etc/forex-alert-bot/forex-alert-bot.env`, SQLite state in
   `/var/lib/forex-alert-bot`, and operator-managed backups in `/var/backups/forex-alert-bot`.
-- Start only `python -m forex_alert_bot --schedule --dry-run` as the dedicated user, with
-  `DRY_RUN=true` in the external environment file. Live Telegram delivery remains gated on issue
-  #32.
+- Start new installations with `python -m forex_alert_bot --schedule --dry-run` as the dedicated user,
+  with `DRY_RUN=true` in the external environment file. The reference deployment subsequently
+  enabled live delivery; see [the current runbook](../vps-deployment.md#12-live-delivery-and-monitoring).
 - Use a small, verified hardening set rather than syscall or network filters that could accidentally
   block DNS, HTTPS, Python extensions, or SQLite.
 - Validate the unit on the Debian 13 target on DigitalOcean with `systemd-analyze verify`; local static checks are not

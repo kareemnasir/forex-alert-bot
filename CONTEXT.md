@@ -11,8 +11,7 @@ completed or failed outcome.
 _Avoid_: Job, execution
 
 **Candidate Signal**:
-A possible BUY, SELL, or other watch outcome emitted by one technical strategy during a
-run.
+A possible BUY or SELL setup emitted by one technical strategy during a run.
 _Avoid_: Trade, alert
 
 **Candidate Metadata**:
