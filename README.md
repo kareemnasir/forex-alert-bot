@@ -94,8 +94,9 @@ DRY_RUN=true python -m forex_alert_bot --schedule
 but it can never force live delivery. The override is accepted only with `--run-once` or
 `--schedule`.
 
-Do not set `DRY_RUN=false` yet. Live Telegram delivery remains disabled until the dry-run evidence
-review in issue #32 is complete. See the [Debian 13 on DigitalOcean deployment guide](docs/vps-deployment.md) for
+The owner authorized live Telegram delivery on September 10, 2026. The deployed VPS uses
+`DRY_RUN=false` and the live systemd override; issue #32 tracks ongoing live monitoring.
+The dry-run commands above remain available for explicit preflight checks. See the [Debian 13 on DigitalOcean deployment guide](docs/vps-deployment.md) for
 the repository-controlled systemd unit, persistent paths, backup/restore, and update procedures.
 
 Each scheduled run is saved to SQLite. By default, the database is created at

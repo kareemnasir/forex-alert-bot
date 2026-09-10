@@ -1,9 +1,34 @@
 # Issue #30 deployment verification
 
-Date: September 10, 2026. Status: **deployment acceptance verified; service running in dry-run**.
+Date: September 10, 2026. Status: **deployment acceptance verified; live delivery enabled by owner authorization**.
 Source of truth: [issue #30](https://github.com/kareemnasir/forex-alert-bot/issues/30).
 Changes and evidence: [draft PR #53](https://github.com/kareemnasir/forex-alert-bot/pull/53).
 Dependencies #47, #31 and #50 are closed. Issue #30 remains open for the user's review.
+
+## Live cutover — September 10, 2026, 18:39 UTC
+
+The owner explicitly authorized live Telegram delivery and removed #32's dry-run waiting period.
+The following initial-deployment evidence is historical; its dry-run controls and no-message claims
+apply before this cutover. [Issue #32](https://github.com/kareemnasir/forex-alert-bot/issues/32) now
+tracks ongoing live operation rather than a pre-launch gate.
+
+- Application revision remains `4d81a389500122269b23b2d023e1b09cdfcdcd18`.
+- The external file now has `DRY_RUN=false`, verified in the actual scheduler environment.
+- Persistent override `/etc/systemd/system/forex-alert-bot.service.d/20-live.conf` sets the effective
+  command to `/opt/forex-alert-bot/.venv/bin/python -m forex_alert_bot --schedule` without `--dry-run`.
+  See [the live override](../deploy/forex-alert-bot-live.conf). Native systemd validation passed.
+- Exactly one explicitly authorized test message, “Forex alert bot Telegram test message.”, was
+  accepted by Telegram at 18:39:25 UTC. It is a connectivity test, not a generated Alert record.
+- Live manual **Run 4**, 18:39:26.886844–18:39:29.959864 UTC: completed, `dry_run=0`, zero errors,
+  zero candidates, technical decision #7 and final decision #8 both No Alert/score 0, zero generated
+  alerts. No candidate was forced; the full natural candidate-to-delivery path remains unverified.
+- Enabled service started at 18:39:30 UTC, PID 1383, active/running, `NRestarts=0`. Its command and
+  environment independently confirmed live mode. The inspected journal had no configured secrets.
+- Pre-live backup `/var/backups/forex-alert-bot/pre-live-20260910T183924Z.sqlite3` passed integrity
+  and foreign-key checks. Baseline maximum Run ID 3; original database/history retained.
+- Safe activation/verification reports remain under `/root/issue30-evidence/` as
+  `live-cutover.json` and `live-verification.json`. Run 4 is manual; the first natural live scheduled
+  Run is a remaining monitoring check, expected at 19:00 UTC on the unchanged schedule.
 
 ## Host and deployed revision
 
@@ -211,21 +236,9 @@ The one-shot command is evidence of what ran; do not rerun it inside #32's obser
   independent external review is claimed. Final local review found no outstanding actionable
   findings; the prior restore-permission finding was verified fixed on the VPS.
 
-## Begin issue #32
+## Continue issue #32
 
-The formal observation period has not started. Leave the service in dry-run and follow
-[the exact observation procedure](vps-deployment.md#begin-the-32-observation-period):
-
-1. Review #30's completed deployment evidence, including natural scheduled Run 3. No deployment
-   acceptance check remains blocked; #30 and draft PR #53 remain open for the user's review.
-2. Stop the service, confirm inactive, make and validate a fresh timestamped online backup using
-   runbook section 8, and retain it as the deployment archive. Keep the original database.
-3. Record the UTC start boundary and `SELECT coalesce(max(id),0) FROM runs;` as `BASELINE_RUN_ID`.
-4. Verify external `DRY_RUN=true` and literal `--schedule --dry-run`; start the service and record
-   start time, enabled state and status. No manual one-shots during the observation window.
-5. Collect at least **three trading days and 50 provider-successful scheduled Runs** after the
-   baseline. Correlate Run IDs with journal trigger times, inspect every outcome category, and
-   separate provider failures from strategy findings. Preserve history and keep automated tests
-   isolated from the runtime database.
-6. Report natural-candidate coverage honestly and conclude `remain in dry-run` or
-   `ready for limited live alerts`. Neither conclusion itself authorizes sending messages.
+The owner replaced the earlier dry-run observation plan with live monitoring. Follow
+[the current procedure](vps-deployment.md#begin-the-32-observation-period) and the updated issue.
+There is no three-day / 50-run prerequisite. Preserve the archived baseline and runtime history;
+inspect natural scheduled Runs and the first real qualifying alert without manufacturing signals.

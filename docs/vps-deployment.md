@@ -7,9 +7,10 @@ identified by its full Git commit SHA.
 The current host is `forex-alert-bot` (`147.182.139.12`, DigitalOcean `nyc1`). See the
 [deployment evidence](issue-30-deployment-verification.md) for the verified revision and Run IDs.
 
-> **Safety gate:** Do not set `DRY_RUN=false`, remove the unit's `--dry-run` argument, or send a
-> Telegram test message during this deployment. Live delivery remains disabled until issue #32 is
-> completed and reviewed.
+> **Current operation:** The owner authorized live Telegram delivery on September 10, 2026.
+> The VPS now uses `DRY_RUN=false` and the live override in section 12. The previous #32
+> dry-run waiting period is removed. Sections 1–11 retain the initial-install/preflight procedure.
+> Do not set `DRY_RUN=false` on a new installation without explicit operator authorization.
 
 The service has no inbound application port. Do not add a firewall rule for it. It makes outbound
 DNS and HTTPS requests to the configured providers and Telegram.
@@ -561,50 +562,72 @@ scheduled Run after restart. Restore a database backup only when the selected re
 demonstrably incompatible with current data or the database is corrupt; code rollback alone is not
 a reason to discard Run history.
 
-## 12. Gate for issue #32
+## 12. Gate for issue #32 — replaced by authorized live operation
 
-Keep both controls in place: `DRY_RUN=true` in the external file and `--dry-run` in `ExecStart`.
-Issue #32 must review authorized VPS evidence before either control changes:
+On September 10, 2026 the owner removed the three-trading-day / 50-run dry-run prerequisite and
+explicitly authorized live Telegram delivery. [Issue #32](https://github.com/kareemnasir/forex-alert-bot/issues/32)
+now tracks ongoing live operation and alert quality; it does not block startup or require dry-run.
 
-- a successful one-shot dry-run and at least one completed scheduled Run;
-- read-only inspection of Run, Candidate Signal, News Analysis, Alert Decision, Score Adjustment,
-  delivery-skip, and Error Record outcomes;
-- stable provider behavior with investigated failures;
-- journald and systemd restart/stop behavior;
-- a validated backup and a controlled restore drill;
-- confirmation that logs and operator output do not expose credentials or provider payloads; and
-- an explicit, reviewed decision to test and enable Telegram delivery.
+### Current live service
 
-Until that review is complete, repository installation can be complete while live VPS acceptance
-and issue closure remain pending.
+The external environment file contains `DRY_RUN=false`. The base unit remains the initial-install
+unit; the persistent `/etc/systemd/system/forex-alert-bot.service.d/20-live.conf` override resets its
+command to remove the one-way CLI dry-run override:
+
+```ini
+[Unit]
+Description=Forex Alert Bot scheduled live service
+
+[Service]
+ExecStart=
+ExecStart=/opt/forex-alert-bot/.venv/bin/python -m forex_alert_bot --schedule
+```
+
+This definition is versioned as [deploy/forex-alert-bot-live.conf](../deploy/forex-alert-bot-live.conf).
+The override survives base-unit installation during an update or rollback. Do not delete it during
+routine deployment. The current live host does not need to repeat activation or the test message.
+
+To reproduce an explicitly authorized live activation: stop the service, validate a section 8
+backup, record the UTC boundary and maximum Run ID, then change only `DRY_RUN` to `false` using
+`sudoedit /etc/forex-alert-bot/forex-alert-bot.env`. Preserve root:forex-alert-bot ownership and 0640
+permissions. Install the reviewed override:
+
+```bash
+sudo install -d -o root -g root -m 0755 /etc/systemd/system/forex-alert-bot.service.d
+sudo install -o root -g root -m 0644 \
+  /opt/forex-alert-bot/deploy/forex-alert-bot-live.conf \
+  /etc/systemd/system/forex-alert-bot.service.d/20-live.conf
+sudo systemd-analyze verify /etc/systemd/system/forex-alert-bot.service
+sudo systemctl daemon-reload
+sudo systemctl start forex-alert-bot.service
+sudo systemctl is-enabled forex-alert-bot.service
+sudo systemctl show forex-alert-bot.service -p ActiveState -p SubState -p NRestarts -p ExecStart
+```
+
+The running Python command must contain `--schedule` without `--dry-run`, and the actual process
+must have `DRY_RUN=false`. Inspect these values without dumping the rest of the process environment.
+A live one-shot uses `--run-once` without `--dry-run` and may send a real alert; execute it only when
+intended. The optional `--telegram-test` command sends a real test message and was already verified
+once at activation. A connectivity test is separate from a strategy-generated alert.
 
 ### Begin the #32 observation period
 
-1. Finish #30's VPS checks above and record host identity, deployed full SHA, installed unit,
-   Python version, config names/pair-timeframe inventory (no secret values), one-shot and scheduled
-   Run IDs, service enablement/status, and backup/restore results. Do not count local Run 79 as VPS
-   evidence or count a manual one-shot as a scheduled Run.
-2. Stop the service and confirm `ActiveState=inactive`; finish any manual one-shot. Make and
-   validate a timestamped section 8 backup of the deployment database. Preserve that archive and
-   the original database, then record the UTC observation boundary and `SELECT coalesce(max(id),0)
-   FROM runs;` result as `BASELINE_RUN_ID`. This is an explicitly archived baseline permitted by
-   #32; no history needs deletion. Run no automated tests against this runtime path.
-3. Keep `DRY_RUN=true` in the external file and the literal `--schedule --dry-run` ExecStart.
-   Start the service using `sudo systemctl start forex-alert-bot.service`; capture service start
-   time, status and `is-enabled`. Do not run additional manual one-shots in the observation window;
-   the schema has no scheduled/manual origin flag. If one is necessary, explicitly exclude its
-   Run ID in the observation report and correlate all counted Runs with journald trigger times.
-4. Observe for at least three trading days **and** at least 50 provider-successful scheduled Runs
-   after `BASELINE_RUN_ID`. Count only completed dry Runs with no persisted provider errors and
-   the unchanged six-combination inventory. Preserve per-day journald evidence and inspect recent
-   and individual Runs. Investigate failures separately; `completed` alone never earns credit.
-   Record timezone boundaries, missed trigger times and any restarts/configuration changes.
-5. Report all #32 categories: errors, candidates, technical/final decisions, news analyses, score
-   adjustments, cooldown/delivery skips and sent alerts (must remain zero). A natural No Alert is
-   valid. Independently tested Marketaux/Ollama components do not establish the real candidate →
-   news → adjusted decision → dry-run delivery-skip integration path. Keep that gap explicit until
-   it happens naturally. The review must conclude `remain in dry-run` or `ready for limited live
-   alerts`; neither starts live delivery without a separate reviewed authorization.
+The previous dry-run observation procedure is superseded. Live monitoring began at
+2026-09-10T18:39:26.314622+00:00, with archived baseline Run ID 3 and manual live Run 4. Keep the
+archive and original runtime history. Do not run automated tests against the production database.
 
-See [the deployment verification record](issue-30-deployment-verification.md) for what has actually
-been verified and what remains blocked.
+Inspect the next natural scheduled Run through journald and `--inspect-run`; require live mode and
+review all persisted errors and decisions. Continue tracking the six configured pair/timeframe
+combinations, natural candidates, news/sentiment, adjustments, cooldown/delivery skips and sent
+alerts. No Alert is valid; enabling delivery does not force a signal or send a periodic heartbeat.
+
+The first naturally qualifying candidate-to-Telegram path remains unverified until it occurs.
+Neither the successful connectivity message nor separate provider checks establish that path.
+There is no three-day or 50-run gate. Record real evidence before proposing any strategy tuning.
+
+If delivery or behavior is wrong, use `sudo systemctl stop forex-alert-bot.service`, inspect the
+persisted records and journal, and follow the code rollback instructions while retaining SQLite.
+Use `sudo systemctl start forex-alert-bot.service` after resolving the cause.
+
+See [the deployment verification record](issue-30-deployment-verification.md) for the initial
+acceptance evidence and subsequent live cutover.
