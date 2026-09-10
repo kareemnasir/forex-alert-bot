@@ -4,6 +4,9 @@ This is the authoritative V1 runbook for installing the Forex Alert Bot as one P
 Debian 13 on DigitalOcean. It assumes an operator with `sudo` access and an intended application revision
 identified by its full Git commit SHA.
 
+The current host is `forex-alert-bot` (`147.182.139.12`, DigitalOcean `nyc1`). See the
+[deployment evidence](issue-30-deployment-verification.md) for the verified revision and Run IDs.
+
 > **Safety gate:** Do not set `DRY_RUN=false`, remove the unit's `--dry-run` argument, or send a
 > Telegram test message during this deployment. Live delivery remains disabled until issue #32 is
 > completed and reviewed.
@@ -88,6 +91,42 @@ uv pip compile --python-version 3.12 --universal --generate-hashes \
 uv pip compile --python-version 3.12 --universal --generate-hashes \
   requirements-build.txt -o requirements-build.lock
 ```
+
+### Private-repository transfer without VPS GitHub credentials
+
+The deployed host has no GitHub credential. Transfer a reviewed Git bundle over SSH instead of
+copying the workstation's private SSH key or GitHub token. On the workstation, with the intended
+revision checked out and committed:
+
+```bash
+git bundle create /tmp/forex-alert-bot.bundle HEAD
+git bundle verify /tmp/forex-alert-bot.bundle
+scp -i ~/.ssh/id_ed25519 /tmp/forex-alert-bot.bundle root@147.182.139.12:/root/forex-alert-bot.bundle
+```
+
+For the initial install, substitute this clone command in section 3:
+
+```bash
+sudo git clone /root/forex-alert-bot.bundle /opt/forex-alert-bot
+sudo git -C /opt/forex-alert-bot remote set-url origin https://github.com/kareemnasir/forex-alert-bot.git
+```
+
+Skip the network `fetch origin` for that initial install; the bundle contains its own Git history.
+For updates, upload a fresh bundle and substitute the following for `fetch --prune origin` in
+section 10, then check out the explicit reviewed SHA as usual:
+
+```bash
+sudo git -C /opt/forex-alert-bot fetch /root/forex-alert-bot.bundle HEAD
+```
+
+Retain the bundle and pin the deployed SHA locally so rollback commits remain reachable:
+
+```bash
+sudo git -C /opt/forex-alert-bot tag deploy-<UNIQUE_RELEASE_NAME> <APP_REVISION>
+```
+
+The bundle contains committed repository content only; external configuration and SQLite history
+stay on the host. Uploading a bundle does not change the running revision.
 
 `requirements-dev.txt` contains Pytest and Ruff for CI, a developer workstation, or a disposable
 verification environment; the service does not need those packages to start. Before deployment,
@@ -229,6 +268,10 @@ for secrets before sharing). Record `git -C /opt/forex-alert-bot rev-parse HEAD`
 `sudo systemctl show forex-alert-bot.service -p ActiveState -p SubState -p NRestarts -p MainPID`.
 The unit permits five starts within 300 seconds, waits 30 seconds between failure restarts, and
 then leaves rapid persistent failures stopped until the operator fixes the cause and resets it.
+On this Debian host the rate-limit drill retained `Result=signal`; verify the journal's
+`Start request repeated too quickly` entry and `NRestarts`, rather than requiring the result string
+to equal `start-limit-hit`. Inject failures only during a planned maintenance window with no
+in-flight Run, then reset the failure state and confirm recovery.
 
 HTTPX request and HTTPCore transport logging are capped at WARNING even with `LOG_LEVEL=DEBUG`;
 request URLs and headers can contain credentials. Application scheduling and error diagnostics
@@ -274,8 +317,8 @@ and Run IDs; the current database does not persist successful candle-fetch recei
 attempts each configured combination and records failed fetches. A No Alert outcome with zero
 candidates is valid: in that case news and sentiment are not called and no delivery skip is expected.
 
-These steps remain pending until they are performed on an explicitly authorized VPS. Repository
-verification is not live service evidence.
+Repeat these checks after each deployment. See the deployment verification record for observed
+VPS results; repository verification alone is not live service evidence.
 
 ### Recognize failures
 
