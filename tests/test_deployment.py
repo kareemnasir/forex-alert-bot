@@ -100,7 +100,7 @@ def test_vps_guide_covers_safe_installation_and_recovery_commands() -> None:
     backup = guide_section(guide, "## 8. Back up SQLite safely", "## 9. Restore SQLite safely")
     restore = guide_section(guide, "## 9. Restore SQLite safely", "## 10. Update the application")
     update = guide_section(guide, "## 10. Update the application", "## 11. Roll back code")
-    rollback = guide_section(guide, "## 11. Roll back code", "## 12. Gate for issue #32")
+    rollback = guide_section(guide, "## 11. Roll back code", "## 12. Live delivery and monitoring")
     for fail_fast_section in (backup, restore, update, rollback):
         assert "set -euo pipefail" in fail_fast_section
     assert 'test -f "$RESTORE_SOURCE"' in restore

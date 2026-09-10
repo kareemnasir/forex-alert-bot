@@ -1,23 +1,23 @@
-# Issue #30 deployment verification
+# Deployment verification: September 10, 2026
 
-Date: September 10, 2026. Status: **deployment acceptance verified; live delivery enabled by owner authorization**.
+Date: September 10, 2026. Status: **deployment verified; live delivery enabled**.
 Source of truth: [issue #30](https://github.com/kareemnasir/forex-alert-bot/issues/30).
-Changes and evidence: [draft PR #53](https://github.com/kareemnasir/forex-alert-bot/pull/53).
-Dependencies #47, #31 and #50 are closed. Issue #30 remains open for the user's review.
+Changes and evidence: [PR #53](https://github.com/kareemnasir/forex-alert-bot/pull/53).
+PR #53 was merged as `dcf2bf6830c1dedb18f82bfba38a6fde54ae7cf4`; issue #30 is closed.
+Issue #32 was subsequently closed as not planned, with remaining monitoring checks unverified.
 
 ## Live cutover — September 10, 2026, 18:39 UTC
 
-The owner explicitly authorized live Telegram delivery and removed #32's dry-run waiting period.
+Live Telegram delivery was enabled after the initial deployment checks. The earlier three-day / 50-run observation plan was not completed.
 The following initial-deployment evidence is historical; its dry-run controls and no-message claims
-apply before this cutover. [Issue #32](https://github.com/kareemnasir/forex-alert-bot/issues/32) now
-tracks ongoing live operation rather than a pre-launch gate.
+apply before this cutover. The [monitoring issue](https://github.com/kareemnasir/forex-alert-bot/issues/32) preserves the live activation record and remaining checks; its closure does not establish that those checks passed.
 
 - Application revision remains `4d81a389500122269b23b2d023e1b09cdfcdcd18`.
 - The external file now has `DRY_RUN=false`, verified in the actual scheduler environment.
 - Persistent override `/etc/systemd/system/forex-alert-bot.service.d/20-live.conf` sets the effective
   command to `/opt/forex-alert-bot/.venv/bin/python -m forex_alert_bot --schedule` without `--dry-run`.
   See [the live override](../deploy/forex-alert-bot-live.conf). Native systemd validation passed.
-- Exactly one explicitly authorized test message, “Forex alert bot Telegram test message.”, was
+- Exactly one test message, “Forex alert bot Telegram test message.”, was
   accepted by Telegram at 18:39:25 UTC. It is a connectivity test, not a generated Alert record.
 - Live manual **Run 4**, 18:39:26.886844–18:39:29.959864 UTC: completed, `dry_run=0`, zero errors,
   zero candidates, technical decision #7 and final decision #8 both No Alert/score 0, zero generated
@@ -27,12 +27,12 @@ tracks ongoing live operation rather than a pre-launch gate.
 - Pre-live backup `/var/backups/forex-alert-bot/pre-live-20260910T183924Z.sqlite3` passed integrity
   and foreign-key checks. Baseline maximum Run ID 3; original database/history retained.
 - Safe activation/verification reports remain under `/root/issue30-evidence/` as
-  `live-cutover.json` and `live-verification.json`. Run 4 is manual; the first natural live scheduled
-  Run is a remaining monitoring check, expected at 19:00 UTC on the unchanged schedule.
+  `live-cutover.json` and `live-verification.json`. Run 4 is manual. Natural live scheduled Run 5 completed at 19:00 UTC with zero errors, zero candidates, and No Alert decisions; its database record was checked over SSH.
+- Follow-up inspection confirmed natural live Run 6 at 19:30 UTC / 3:30 PM Detroit also completed with zero errors, zero candidates, and zero sent alerts.
 
 ## Host and deployed revision
 
-- DigitalOcean Droplet `forex-alert-bot`, ID `599406664`, `nyc1`, IPv4 `147.182.139.12`.
+- DigitalOcean Droplet `forex-alert-bot` in `nyc1`. Host access details are maintained outside this guide.
 - Debian GNU/Linux 13 (trixie), Debian version 13.5; Python 3.13.5; systemd 257.13.
 - SSH port 22, root UID 0; administrative access verified after the operator unlocked the local key.
 - Pinned ED25519 host fingerprint: `SHA256:MKsvP2lDgmH1STyESUqAPYagJ3X1nyKz6ZbK8uSwN/g`.
@@ -41,14 +41,13 @@ tracks ongoing live operation rather than a pre-launch gate.
   attestation was obtained.
 - Deployed application revision: `4d81a389500122269b23b2d023e1b09cdfcdcd18`.
   Later documentation-only commits in PR #53 are not claimed as the running application revision.
-- The initial host had no existing bot installation, service user, or database. Local runtime
-  history and the unrelated `codex/digitalocean-debian-docs` branch were preserved.
+- The initial host had no existing bot installation, service user, or database. Existing local runtime history and unrelated Git work were preserved.
 
 A Git bundle transferred the committed repository over SSH; no workstation private key or GitHub
 credential was installed on the VPS. The checkout is detached, root-owned and service-readable at
 `/opt/forex-alert-bot`. The runbook now documents bundle-based updates for this private repository.
 
-## Acceptance evidence
+## Initial dry-run acceptance evidence
 
 | Criterion | Observed VPS result |
 | --- | --- |
@@ -70,7 +69,7 @@ credential was installed on the VPS. The checkout is detached, root-owned and se
 The session policy approximates the normal Forex week; it has no holiday or broker-specific
 calendar. One-shots bypass the schedule. Startup does not immediately execute a scheduled Run.
 
-## Installed unit definition
+## Initial base unit definition
 
 `/etc/systemd/system/forex-alert-bot.service`, root:root 0644, byte-for-byte compared with
 [the deployed unit](https://github.com/kareemnasir/forex-alert-bot/blob/4d81a389500122269b23b2d023e1b09cdfcdcd18/deploy/forex-alert-bot.service):
@@ -128,7 +127,7 @@ Process inspection also confirmed no effective capabilities, `NoNewPrivs=1`, the
 command, and agreement between every external configuration assignment and the actual process
 environment. No secret values were printed.
 
-## Run evidence
+## Initial dry-run evidence
 
 Database: `/var/lib/forex-alert-bot/forex-alert-bot.sqlite3`.
 Inventory: EUR/USD, GBP/USD, USD/JPY × 15min and 1h; all three V1 technical strategies enabled.
@@ -144,7 +143,7 @@ Run 1 has technical decision #1 and final decision #2: both No setup / No Alert,
 News Analysis #1 is `no_relevant_news`; no candidate caused a news or sentiment call. Score
 Adjustment #1 links decisions #1 → #2 with delta 0. Cooldown skips and delivery skips are both 0;
 no qualifying decision reached delivery. Run 2 also has one technical and one final No Alert
-decision. Neither manual Run counts toward #32's scheduled-run total.
+decision. Runs 1 and 2 were manual checks, not evidence of unattended scheduling.
 
 Run 3 has News Analysis #3 (`no_relevant_news`), technical decision #5 and final decision #6
 (both No setup / No Alert, score 0), and Score Adjustment #3 with delta 0. There are no cooldown
@@ -167,7 +166,7 @@ created candidates nor wrote pipeline records. **No Telegram messages were sent.
 The real, naturally qualifying candidate → news → adjusted decision → dry-run delivery-skip path
 remains unverified. Independent component checks do not establish that integration path. No
 candidate was forced and no threshold was changed. A provider-successful No Alert is valid for
-#30; carry this coverage gap into #32.
+#30; the remaining integration gap is recorded below.
 
 ## Recovery and service drills
 
@@ -219,7 +218,7 @@ sudo sqlite3 -readonly /var/lib/forex-alert-bot/forex-alert-bot.sqlite3 'PRAGMA 
 
 Results: one-shot exit 0, explicit persisted decisions/errors inspected, unit validation passed,
 enabled and active/running after reboot, SQLite integrity `ok` and no foreign-key violations.
-The one-shot command is evidence of what ran; do not rerun it inside #32's observation period.
+The one-shot command records what was executed. Keep manual checks distinct from naturally scheduled runs when evaluating unattended operation.
 
 - Local complete suite: **337 passed**; Ruff lint and formatting passed. The runtime guard confirmed
   the original local database and sidecars were unchanged.
@@ -231,14 +230,10 @@ The one-shot command is evidence of what ran; do not rerun it inside #32's obser
 - Local disposable SQLite/Bash checks cover WAL backup, restoration of existing/missing/corrupt
   targets, preservation of old bytes, and invalid source rejection before mutation. The VPS drill
   separately establishes native permissions and service-user readability.
-- Review is local and sequential in the main agent context, per repository workflow instructions.
-  The earlier external-review attempt was rejected before starting; it was not retried and no
-  independent external review is claimed. Final local review found no outstanding actionable
-  findings; the prior restore-permission finding was verified fixed on the VPS.
+- Local review found no outstanding actionable findings. The restore-permission finding was fixed and verified on the VPS. Independent external review was not performed.
 
-## Continue issue #32
+## Remaining validation
 
-The owner replaced the earlier dry-run observation plan with live monitoring. Follow
-[the current procedure](vps-deployment.md#begin-the-32-observation-period) and the updated issue.
-There is no three-day / 50-run prerequisite. Preserve the archived baseline and runtime history;
-inspect natural scheduled Runs and the first real qualifying alert without manufacturing signals.
+The deployment is complete and live delivery is enabled. The first naturally qualifying candidate reaching Telegram remains unverified in this record. The successful connectivity message, separate provider checks, and No Alert runs do not establish that path.
+
+Issue #32 was closed as not planned, without completing its remaining checks. Use the [live monitoring procedure](vps-deployment.md#inspect-live-operation) to inspect future runs and preserve actual delivery evidence. This document is a dated verification record, not a live uptime report.
